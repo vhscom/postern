@@ -1,0 +1,87 @@
+package main
+
+import (
+	"database/sql"
+	"log"
+
+	_ "modernc.org/sqlite"
+)
+
+var store *sql.DB
+
+func initDB(path string) {
+	var err error
+	dsn := path + "?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)"
+	if path == ":memory:" {
+		dsn = ":memory:?_pragma=foreign_keys(1)"
+	}
+	store, err = sql.Open("sqlite", dsn)
+	if err != nil {
+		log.Fatal(err)
+	}
+	store.SetMaxOpenConns(1) // SQLite single-writer
+	migrate()
+}
+
+func migrate() {
+	// Version tracking — allows future ALTER TABLE migrations
+	store.Exec(`CREATE TABLE IF NOT EXISTS schema_version (version INTEGER PRIMARY KEY, applied_at TEXT DEFAULT (datetime('now')))`)
+	var currentVersion int
+	store.QueryRow("SELECT COALESCE(MAX(version), 0) FROM schema_version").Scan(&currentVersion)
+
+	stmts := []string{
+		`CREATE TABLE IF NOT EXISTS account (
+			id INTEGER PRIMARY KEY,
+			email TEXT UNIQUE NOT NULL,
+			password_data TEXT NOT NULL,
+			created_at TEXT DEFAULT (datetime('now'))
+		)`,
+		`CREATE TABLE IF NOT EXISTS session (
+			id TEXT PRIMARY KEY,
+			user_id INTEGER NOT NULL REFERENCES account(id),
+			user_agent TEXT NOT NULL,
+			ip_address TEXT NOT NULL,
+			expires_at TEXT NOT NULL,
+			created_at TEXT NOT NULL
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_session_user ON session(user_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_session_expiry ON session(expires_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_session_user_expiry ON session(user_id, expires_at)`,
+		`CREATE TABLE IF NOT EXISTS security_event (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			type TEXT NOT NULL,
+			ip_address TEXT NOT NULL,
+			user_id INTEGER,
+			user_agent TEXT,
+			status INTEGER,
+			detail TEXT,
+			created_at TEXT DEFAULT (datetime('now')),
+			actor_id TEXT NOT NULL DEFAULT 'app:postern'
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_event_type ON security_event(type)`,
+		`CREATE INDEX IF NOT EXISTS idx_event_created ON security_event(created_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_event_user ON security_event(user_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_event_ip ON security_event(ip_address)`,
+		`CREATE TABLE IF NOT EXISTS agent_credential (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT UNIQUE NOT NULL,
+			key_hash TEXT NOT NULL,
+			trust_level TEXT NOT NULL DEFAULT 'read' CHECK (trust_level IN ('read','write')),
+			description TEXT,
+			created_at TEXT DEFAULT (datetime('now')),
+			revoked_at TEXT
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_agent_active ON agent_credential(name) WHERE revoked_at IS NULL`,
+	}
+	for _, s := range stmts {
+		if _, err := store.Exec(s); err != nil {
+			log.Fatalf("migrate: %v\n%s", err, s)
+		}
+	}
+
+	// Record schema version (bump this number when adding migrations above)
+	const schemaVersion = 1
+	if currentVersion < schemaVersion {
+		store.Exec("INSERT OR IGNORE INTO schema_version (version) VALUES (?)", schemaVersion)
+	}
+}
