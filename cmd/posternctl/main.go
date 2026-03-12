@@ -31,6 +31,7 @@ const (
 	stateEventDetail
 	stateEventStats
 	stateAgents
+	stateSubscriptionHistory
 	stateTailEvents
 	stateFrameInspector
 	stateFrameDetail
@@ -50,6 +51,9 @@ const (
 	actionViewEventsForUser
 	actionViewEventStats
 	actionTailEvents
+	// Agents
+	// Subscriptions
+	actionViewSubscriptionHistory
 	// Agents
 	actionListAgents
 	actionProvisionAgent
@@ -83,6 +87,9 @@ var menuItems = []menuItem{
 	{label: "View event stats", action: actionViewEventStats},
 	{label: "Tail events (live)", action: actionTailEvents},
 
+	{label: "SUBSCRIPTIONS", isHeader: true},
+	{label: "View subscription history", action: actionViewSubscriptionHistory},
+
 	{label: "AGENTS", isHeader: true},
 	{label: "List agents", action: actionListAgents},
 	{label: "Provision agent", action: actionProvisionAgent},
@@ -114,6 +121,11 @@ type eventStatsMsg struct {
 type agentsMsg struct {
 	agents []api.Agent
 	err    error
+}
+
+type subscriptionHistoryMsg struct {
+	resp *api.SubscriptionHistoryResponse
+	err  error
 }
 
 type tailConnectedMsg struct {
@@ -150,13 +162,14 @@ type model struct {
 	resultErr     error
 
 	// data states
-	sessions    []api.Session
-	events      []api.Event
-	eventsTable table.Model
-	eventStats  map[string]int
-	eventSince  string
-	agents      []api.Agent
-	dataErr     error
+	sessions            []api.Session
+	events              []api.Event
+	eventsTable         table.Model
+	eventStats          map[string]int
+	eventSince          string
+	agents              []api.Agent
+	subscriptionHistory *api.SubscriptionHistoryResponse
+	dataErr             error
 
 	// tail events state
 	tailEvents        []api.Event
@@ -228,6 +241,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.dataErr = msg.err
 		m.state = stateAgents
 		return m, nil
+	case subscriptionHistoryMsg:
+		m.subscriptionHistory = msg.resp
+		m.dataErr = msg.err
+		m.state = stateSubscriptionHistory
+		return m, nil
 	case tailConnectedMsg:
 		if msg.err != nil {
 			m.tailErr = msg.err
@@ -292,7 +310,7 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleFrameInspector(msg)
 	case stateFrameDetail:
 		return m.handleFrameDetail(msg)
-	case stateResult, stateSessions, stateEventStats, stateAgents:
+	case stateResult, stateSessions, stateEventStats, stateAgents, stateSubscriptionHistory:
 		return m.handleDataView(key)
 	}
 	return m, nil
@@ -357,6 +375,9 @@ func (m model) dispatchAction() (model, tea.Cmd) {
 		m.inputHint = "  Examples:  login.*, session.revoke, ws.*\n" +
 			"  Available: login.*, password.*, session.*, agent.*, challenge.*, ws.*, registration.*, rate_limit.*\n" +
 			"  Combine:   login.*,session.revoke"
+	case actionViewSubscriptionHistory:
+		m.subscriptionHistory = nil
+		m.startInput([]string{"User ID"})
 	case actionListAgents:
 		m.agents = nil
 		return m, m.fetchAgents()
@@ -433,6 +454,10 @@ func (m model) afterInputComplete() (model, tea.Cmd) {
 		m.state = stateEvents
 		m.events = nil
 		return m, m.fetchEvents(m.inputs[0])
+	case actionViewSubscriptionHistory:
+		m.state = stateSubscriptionHistory
+		m.subscriptionHistory = nil
+		return m, m.fetchSubscriptionHistory(m.inputs[0])
 	case actionTailEvents:
 		filter := strings.TrimSpace(m.inputs[0])
 		if filter != "" {
@@ -599,6 +624,16 @@ func (m model) fetchAgents() tea.Cmd {
 			return agentsMsg{err: err}
 		}
 		return agentsMsg{agents: resp.Agents}
+	}
+}
+
+func (m model) fetchSubscriptionHistory(userID string) tea.Cmd {
+	return func() tea.Msg {
+		resp, err := m.client.GetSubscriptionHistory(context.Background(), userID)
+		if err != nil {
+			return subscriptionHistoryMsg{err: err}
+		}
+		return subscriptionHistoryMsg{resp: resp}
 	}
 }
 
@@ -933,6 +968,8 @@ func (m model) View() string {
 		b.WriteString(m.viewEventDetail())
 	case stateEventStats:
 		b.WriteString(m.viewEventStats())
+	case stateSubscriptionHistory:
+		b.WriteString(m.viewSubscriptionHistory())
 	case stateAgents:
 		b.WriteString(m.viewAgents())
 	case stateTailEvents:
@@ -1249,6 +1286,66 @@ func (m model) viewAgents() string {
 	return b.String()
 }
 
+func (m model) viewSubscriptionHistory() string {
+	var b strings.Builder
+
+	if m.dataErr != nil {
+		b.WriteString(ui.ErrorStyle.Render(fmt.Sprintf("Error: %v", m.dataErr)))
+		b.WriteString(ui.DimStyle.Render("\n\nenter continue | q quit"))
+		return b.String()
+	}
+
+	if m.subscriptionHistory == nil {
+		b.WriteString(ui.DimStyle.Render("Loading..."))
+		return b.String()
+	}
+
+	resp := m.subscriptionHistory
+	b.WriteString(fmt.Sprintf("Subscription History — User %d\n\n", resp.UserID))
+
+	if resp.Current != nil {
+		c := resp.Current
+		b.WriteString(ui.HeaderStyle.Render("CURRENT"))
+		b.WriteString("\n")
+		periodEnd := "-"
+		if c.CurrentPeriodEnd != nil {
+			periodEnd = *c.CurrentPeriodEnd
+		}
+		columns := []ui.Column{
+			{Header: "Tier", Width: 8},
+			{Header: "Customer", Width: 24},
+			{Header: "Period End", Width: 20},
+		}
+		rows := [][]string{{c.Tier, c.StripeCustomerID, periodEnd}}
+		b.WriteString(ui.RenderTable(columns, rows))
+		b.WriteString("\n")
+	} else {
+		b.WriteString(ui.DimStyle.Render("  No subscription found."))
+		b.WriteString("\n\n")
+	}
+
+	if len(resp.History) == 0 {
+		b.WriteString(ui.DimStyle.Render("  No tier changes recorded."))
+	} else {
+		b.WriteString(ui.HeaderStyle.Render("HISTORY"))
+		b.WriteString("\n")
+		columns := []ui.Column{
+			{Header: "From", Width: 8},
+			{Header: "To", Width: 8},
+			{Header: "Reason", Width: 24},
+			{Header: "Date", Width: 20},
+		}
+		rows := make([][]string, len(resp.History))
+		for i, h := range resp.History {
+			rows[i] = []string{h.TierFrom, h.TierTo, h.Reason, h.CreatedAt}
+		}
+		b.WriteString(ui.RenderTable(columns, rows))
+	}
+
+	b.WriteString(ui.DimStyle.Render("\nenter continue | q quit"))
+	return b.String()
+}
+
 func (m model) viewTailEvents() string {
 	var b strings.Builder
 
@@ -1401,6 +1498,9 @@ func printUsage() {
 	fmt.Println("    View events for user          " + dim("List events filtered by user ID"))
 	fmt.Println("    View event stats              " + dim("Aggregate event counts by type"))
 	fmt.Println("    Tail events (live)            " + dim("Stream events in real time (f toggles frame inspector)"))
+	fmt.Println()
+	fmt.Println("  " + label("Subscriptions"))
+	fmt.Println("    View subscription history    " + dim("Show tier changes for a user"))
 	fmt.Println()
 	fmt.Println("  " + label("Agents"))
 	fmt.Println("    List agents                   " + dim("Show agent credentials"))

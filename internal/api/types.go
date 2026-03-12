@@ -113,6 +113,32 @@ type RevokeSessionsResponse struct {
 	Revoked int64 `json:"revoked"`
 }
 
+// --- Subscriptions ---
+
+// SubscriptionCurrent represents the current subscription state.
+type SubscriptionCurrent struct {
+	Tier             string  `json:"tier"`
+	StripeCustomerID string  `json:"stripe_customer_id"`
+	CurrentPeriodEnd *string `json:"current_period_end"`
+	CreatedAt        *string `json:"created_at"`
+	UpdatedAt        *string `json:"updated_at"`
+}
+
+// SubscriptionHistoryEntry represents a single tier change.
+type SubscriptionHistoryEntry struct {
+	TierFrom  string `json:"tier_from"`
+	TierTo    string `json:"tier_to"`
+	Reason    string `json:"reason"`
+	CreatedAt string `json:"created_at"`
+}
+
+// SubscriptionHistoryResponse is the response from GET /ops/subscriptions/{user_id}/history.
+type SubscriptionHistoryResponse struct {
+	UserID  int                        `json:"user_id"`
+	Current *SubscriptionCurrent       `json:"current"`
+	History []SubscriptionHistoryEntry `json:"history"`
+}
+
 // DefaultSince returns the ISO 8601 timestamp for 24 hours ago.
 func DefaultSince() string {
 	return time.Now().UTC().Add(-24 * time.Hour).Format(time.RFC3339)
