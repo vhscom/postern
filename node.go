@@ -109,8 +109,12 @@ func handleNodeCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	body.AllowedIPs = strings.TrimSpace(body.AllowedIPs)
 	if body.AllowedIPs == "" {
-		respondError(w, r, http.StatusBadRequest, "VALIDATION_ERROR", "allowed_ips required (e.g. 10.0.0.1/32)")
-		return
+		ip, err := allocateMeshIP(claims.UID)
+		if err != nil {
+			respondError(w, r, http.StatusConflict, "IP_EXHAUSTED", err.Error())
+			return
+		}
+		body.AllowedIPs = ip
 	}
 	if body.ListenPort == 0 {
 		body.ListenPort = 51820
@@ -133,40 +137,26 @@ func handleNodeCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create agent credential for this node
-	agentName := fmt.Sprintf("node-%s-%d", body.Label, claims.UID)
-	apiKey := randomHex(32)
-	keyHash := hashAPIKey(apiKey)
-
-	result, err := store.Exec(
-		"INSERT INTO agent_credential (name, key_hash, trust_level, description, user_id) VALUES (?,?,?,?,?)",
-		agentName, keyHash, "read", fmt.Sprintf("Node agent for %s", body.Label), claims.UID,
-	)
-	if err != nil {
-		if strings.Contains(err.Error(), "UNIQUE") {
-			respondError(w, r, http.StatusConflict, "NODE_EXISTS", "Node with this label already exists")
-			return
-		}
-		respondError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to create node credential")
-		return
-	}
-	credID, _ := result.LastInsertId()
-
-	// Create node record
+	// Determine endpoint source
 	var wgEndpoint *string
-	endpointSource := "manual"
+	endpointSource := "stun"
 	if body.WGEndpoint != "" {
 		wgEndpoint = &body.WGEndpoint
-	} else {
-		endpointSource = "stun" // no endpoint provided — allow STUN discovery
+		endpointSource = "manual"
 	}
-	_, err = store.Exec(
-		`INSERT INTO user_node (user_id, label, wg_pubkey, wg_endpoint, wg_listen_port, allowed_ips, persistent_keepalive, interface_name, agent_credential_id, wg_endpoint_source)
-		VALUES (?,?,?,?,?,?,?,?,?,?)`,
-		claims.UID, body.Label, body.WGPubkey, wgEndpoint, body.ListenPort, body.AllowedIPs, body.Keepalive, body.Interface, credID, endpointSource,
-	)
+
+	apiKey, _, err := insertNodeWithCredential(nodeCreateOpts{
+		UserID:         claims.UID,
+		Label:          body.Label,
+		WGPubkey:       body.WGPubkey,
+		WGEndpoint:     wgEndpoint,
+		ListenPort:     body.ListenPort,
+		AllowedIPs:     body.AllowedIPs,
+		Keepalive:      body.Keepalive,
+		Interface:      body.Interface,
+		EndpointSource: endpointSource,
+	})
 	if err != nil {
-		store.Exec("DELETE FROM agent_credential WHERE id = ?", credID)
 		if strings.Contains(err.Error(), "UNIQUE") {
 			respondError(w, r, http.StatusConflict, "NODE_EXISTS", "Node with this label already exists")
 			return
@@ -178,24 +168,15 @@ func handleNodeCreate(w http.ResponseWriter, r *http.Request) {
 	emitEvent("node.created", clientIP(r), claims.UID, r.UserAgent(), http.StatusCreated,
 		map[string]any{"label": body.Label})
 
-	// New node joins the mesh — notify all connected nodes
 	go notifyNodeSync(claims.UID)
 
 	resp := map[string]any{
 		"label":   body.Label,
 		"api_key": apiKey,
+		"mesh_ip": body.AllowedIPs,
 	}
-	if cfg.OpsAddr != "" {
-		host := r.Host
-		if i := strings.LastIndex(host, ":"); i != -1 {
-			host = host[:i]
-		}
-		scheme := "http"
-		if r.TLS != nil {
-			scheme = "https"
-		}
-		port := strings.TrimPrefix(cfg.OpsAddr, ":")
-		resp["ops_url"] = fmt.Sprintf("%s://%s:%s", scheme, host, port)
+	if u := buildOpsURL(r); u != "" {
+		resp["ops_url"] = u
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -319,6 +300,90 @@ func handleNodeDelete(w http.ResponseWriter, r *http.Request) {
 	go notifyNodeSync(claims.UID)
 
 	jsonOK(w, map[string]any{"ok": true})
+}
+
+// buildOpsURL constructs the ops surface URL from the current request, or "" if not configured.
+func buildOpsURL(r *http.Request) string {
+	if cfg.OpsAddr == "" {
+		return ""
+	}
+	host := r.Host
+	if i := strings.LastIndex(host, ":"); i != -1 {
+		host = host[:i]
+	}
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	port := strings.TrimPrefix(cfg.OpsAddr, ":")
+	return fmt.Sprintf("%s://%s:%s", scheme, host, port)
+}
+
+// nodeCreateOpts holds the parameters for creating a node with its agent credential.
+type nodeCreateOpts struct {
+	UserID         int
+	Label          string
+	WGPubkey       string
+	WGEndpoint     *string
+	ListenPort     int
+	AllowedIPs     string
+	Keepalive      int
+	Interface      string
+	EndpointSource string
+}
+
+// insertNodeWithCredential creates an agent credential and node record.
+// Returns the API key for the agent and the node ID, or an error.
+func insertNodeWithCredential(opts nodeCreateOpts) (apiKey string, nodeID int64, err error) {
+	agentName := fmt.Sprintf("node-%s-%d", opts.Label, opts.UserID)
+	apiKey = randomHex(32)
+	keyHash := hashAPIKey(apiKey)
+
+	result, err := store.Exec(
+		"INSERT INTO agent_credential (name, key_hash, trust_level, description, user_id) VALUES (?,?,?,?,?)",
+		agentName, keyHash, "read", fmt.Sprintf("Node agent for %s", opts.Label), opts.UserID,
+	)
+	if err != nil {
+		return "", 0, fmt.Errorf("credential: %w", err)
+	}
+	credID, _ := result.LastInsertId()
+
+	nodeResult, err := store.Exec(
+		`INSERT INTO user_node (user_id, label, wg_pubkey, wg_endpoint, wg_listen_port, allowed_ips, persistent_keepalive, interface_name, agent_credential_id, wg_endpoint_source)
+		VALUES (?,?,?,?,?,?,?,?,?,?)`,
+		opts.UserID, opts.Label, opts.WGPubkey, opts.WGEndpoint, opts.ListenPort, opts.AllowedIPs, opts.Keepalive, opts.Interface, credID, opts.EndpointSource,
+	)
+	if err != nil {
+		store.Exec("DELETE FROM agent_credential WHERE id = ?", credID)
+		return "", 0, fmt.Errorf("node: %w", err)
+	}
+
+	nodeID, _ = nodeResult.LastInsertId()
+	return apiKey, nodeID, nil
+}
+
+// allocateMeshIP assigns the next available IP from 10.0.0.0/24 for a user's mesh.
+func allocateMeshIP(userID int) (string, error) {
+	rows, err := store.Query("SELECT allowed_ips FROM user_node WHERE user_id = ?", userID)
+	if err != nil {
+		return "", err
+	}
+	defer rows.Close()
+
+	used := map[string]bool{}
+	for rows.Next() {
+		var ip string
+		rows.Scan(&ip)
+		used[ip] = true
+	}
+
+	for i := 1; i <= 254; i++ {
+		candidate := fmt.Sprintf("10.0.0.%d/32", i)
+		if !used[candidate] {
+			return candidate, nil
+		}
+	}
+	return "", fmt.Errorf("no available mesh IPs (254 limit)")
 }
 
 // computeNodeStatus returns "online", "idle", or "offline" based on last_seen_at.

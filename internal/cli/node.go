@@ -52,14 +52,14 @@ func printNodeUsage() {
 	fmt.Println()
 	printHeading("Flags (add)")
 	printFlag("--label <name>", "Node name (required)")
-	printFlag("--ip <mesh-ip>", "Mesh IP, e.g. 10.0.0.1/32 (required)")
+	printFlag("--ip <mesh-ip>", "Mesh IP, e.g. 10.0.0.1/32 (auto-assigned if omitted)")
 	printFlag("--endpoint <addr>", "Public endpoint, e.g. 1.2.3.4:51820")
 	printFlag("--port <port>", "WireGuard listen port (default: 51820)")
 	printFlag("--interface <name>", "WireGuard interface (default: wg0)")
 	fmt.Println()
 	printHeading("Example")
-	fmt.Printf("  %s\n", cmdStyle.Render("postern node add --label gateway-nyc --ip 10.0.0.1/32 --endpoint 1.2.3.4:51820"))
-	fmt.Printf("  %s\n", cmdStyle.Render("postern node add --label laptop --ip 10.0.0.2/32"))
+	fmt.Printf("  %s\n", cmdStyle.Render("postern node add --label gateway-nyc --endpoint 1.2.3.4:51820"))
+	fmt.Printf("  %s\n", cmdStyle.Render("postern node add --label laptop"))
 }
 
 func runNodeAdd() {
@@ -89,9 +89,9 @@ func runNodeAdd() {
 		}
 	}
 
-	if label == "" || ip == "" {
-		fmt.Fprintln(os.Stderr, "Error: --label and --ip are required")
-		fmt.Fprintln(os.Stderr, "Example: postern node add --label gateway-nyc --ip 10.0.0.1/32")
+	if label == "" {
+		fmt.Fprintln(os.Stderr, "Error: --label is required")
+		fmt.Fprintln(os.Stderr, "Example: postern node add --label gateway-nyc")
 		os.Exit(1)
 	}
 	if iface == "" {
@@ -109,9 +109,11 @@ func runNodeAdd() {
 	reqBody := map[string]any{
 		"label":          label,
 		"wg_pubkey":      pubKey,
-		"allowed_ips":    ip,
 		"wg_listen_port": json.Number(port),
 		"interface_name": iface,
+	}
+	if ip != "" {
+		reqBody["allowed_ips"] = ip
 	}
 	if endpoint != "" {
 		reqBody["wg_endpoint"] = endpoint
@@ -175,8 +177,13 @@ func runNodeAdd() {
 		fmt.Fprintf(os.Stderr, "Warning: could not write private key: %v\n", err)
 	}
 
+	meshIP, _ := result["mesh_ip"].(string)
+	if meshIP == "" {
+		meshIP = ip
+	}
+
 	fmt.Printf("Node '%s' added to mesh\n", label)
-	fmt.Printf("  Mesh IP:     %s\n", ip)
+	fmt.Printf("  Mesh IP:     %s\n", meshIP)
 	fmt.Printf("  Public key:  %s\n", pubKey)
 	fmt.Printf("  Interface:   %s\n", iface)
 	fmt.Printf("  Config:      %s\n", cfgPath)

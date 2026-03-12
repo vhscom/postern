@@ -67,6 +67,14 @@ func main() {
 			os.Args = os.Args[1:]
 			cli.RunNode()
 			return
+		case "invite":
+			os.Args = os.Args[1:]
+			cli.RunInvite()
+			return
+		case "join":
+			os.Args = os.Args[1:]
+			cli.RunJoin()
+			return
 		case "--version", "-v", "version":
 			fmt.Println("postern " + version)
 			return
@@ -126,6 +134,11 @@ func runServe() {
 	mux.Handle("POST /account/nodes", nodeRL(requireAuthMiddleware(http.HandlerFunc(handleNodeCreate))))
 	mux.Handle("PUT /account/nodes/{label}", nodeRL(requireAuthMiddleware(http.HandlerFunc(handleNodeUpdate))))
 	mux.Handle("DELETE /account/nodes/{label}", nodeRL(requireAuthMiddleware(http.HandlerFunc(handleNodeDelete))))
+	mux.Handle("POST /account/nodes/invite", nodeRL(requireAuthMiddleware(http.HandlerFunc(handleInviteCreate))))
+
+	// --- Join (public, rate-limited) ---
+	joinRL := rateLimit(rateConfig{Window: 5 * time.Minute, Max: 10, Prefix: "rl:join"})
+	mux.Handle("POST /join", joinRL(http.HandlerFunc(handleJoinRedeem)))
 
 	// --- Billing (authenticated, optional) ---
 	if cfg.StripeSecretKey != "" {

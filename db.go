@@ -153,8 +153,29 @@ func migrate() {
 		}
 	}
 
+	// v5: Invite tokens for join flow
+	if currentVersion < 5 {
+		v5 := []string{
+			`CREATE TABLE IF NOT EXISTS invite_token (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				token_hash TEXT UNIQUE NOT NULL,
+				user_id INTEGER NOT NULL REFERENCES account(id),
+				created_at TEXT DEFAULT (datetime('now')),
+				expires_at TEXT NOT NULL,
+				used_at TEXT,
+				used_by_node_id INTEGER REFERENCES user_node(id)
+			)`,
+			`CREATE INDEX IF NOT EXISTS idx_invite_token_hash ON invite_token(token_hash)`,
+		}
+		for _, s := range v5 {
+			if _, err := store.Exec(s); err != nil {
+				log.Fatalf("migrate v5: %v\n%s", err, s)
+			}
+		}
+	}
+
 	// Record schema version (bump this number when adding migrations above)
-	const schemaVersion = 4
+	const schemaVersion = 5
 	if currentVersion < schemaVersion {
 		store.Exec("INSERT OR IGNORE INTO schema_version (version) VALUES (?)", schemaVersion)
 	}

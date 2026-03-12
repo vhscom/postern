@@ -42,6 +42,8 @@ func PrintGlobalHelp() {
 	printHeading("Commands")
 	printCmd("login", "Authenticate with a postern server")
 	printCmd("node add | list | remove", "Manage mesh nodes")
+	printCmd("invite", "Create a join token for adding nodes")
+	printCmd("join <server> <token>", "Join a mesh from an invite")
 	printCmd("agent", "Run the WireGuard mesh agent")
 	printCmd("ctl", "Launch the ops control TUI")
 	printCmd("serve", "Start the postern server")

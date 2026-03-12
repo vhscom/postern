@@ -54,15 +54,17 @@ func notifyNodeSync(userID int) {
 	}
 
 	// Fetch all nodes for this user — these form the mesh
-	type meshPeer struct {
+	type meshNode struct {
 		ID         int
+		Label      string
 		Pubkey     string
 		Endpoint   *string
 		AllowedIPs string
+		ListenPort int
 		Keepalive  int
 	}
 	rows, err := store.Query(
-		"SELECT id, wg_pubkey, wg_endpoint, allowed_ips, persistent_keepalive FROM user_node WHERE user_id = ?",
+		"SELECT id, label, wg_pubkey, wg_endpoint, allowed_ips, wg_listen_port, persistent_keepalive FROM user_node WHERE user_id = ?",
 		userID,
 	)
 	if err != nil {
@@ -71,27 +73,39 @@ func notifyNodeSync(userID int) {
 	}
 	defer rows.Close()
 
-	var allNodes []meshPeer
+	var allNodes []meshNode
 	for rows.Next() {
-		var n meshPeer
-		rows.Scan(&n.ID, &n.Pubkey, &n.Endpoint, &n.AllowedIPs, &n.Keepalive)
+		var n meshNode
+		rows.Scan(&n.ID, &n.Label, &n.Pubkey, &n.Endpoint, &n.AllowedIPs, &n.ListenPort, &n.Keepalive)
 		allNodes = append(allNodes, n)
 	}
 
-	// Each connected node gets all OTHER nodes as peers
+	// Each connected node gets its own info (self) plus all OTHER nodes as peers
 	type syncPeer struct {
-		NodeID    int    `json:"node_id"`
+		NodeID     int    `json:"node_id"`
+		Label      string `json:"label,omitempty"`
 		PublicKey  string `json:"public_key"`
 		Endpoint   string `json:"endpoint,omitempty"`
 		AllowedIPs string `json:"allowed_ips"`
 		Keepalive  int    `json:"persistent_keepalive,omitempty"`
 	}
+	type syncSelf struct {
+		NodeID     int    `json:"node_id"`
+		MeshIP     string `json:"mesh_ip"`
+		ListenPort int    `json:"listen_port"`
+	}
 
 	for _, target := range targets {
 		var peers []syncPeer
+		var self *syncSelf
 		for _, n := range allNodes {
 			if n.ID == target.nodeID {
-				continue // skip self
+				self = &syncSelf{
+					NodeID:     n.ID,
+					MeshIP:     n.AllowedIPs,
+					ListenPort: n.ListenPort,
+				}
+				continue // skip self from peer list
 			}
 			ep := ""
 			if n.Endpoint != nil {
@@ -99,6 +113,7 @@ func notifyNodeSync(userID int) {
 			}
 			peers = append(peers, syncPeer{
 				NodeID:     n.ID,
+				Label:      n.Label,
 				PublicKey:  n.Pubkey,
 				Endpoint:   ep,
 				AllowedIPs: n.AllowedIPs,
@@ -113,6 +128,7 @@ func notifyNodeSync(userID int) {
 			"type": "wg.sync",
 			"payload": map[string]any{
 				"action": "full_sync",
+				"self":   self,
 				"peers":  peers,
 			},
 		}

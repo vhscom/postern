@@ -391,7 +391,12 @@ func handleMessage(ctx context.Context, conn *websocket.Conn, iface string, raw 
 
 func handleSync(ctx context.Context, conn *websocket.Conn, iface, msgID string, payload json.RawMessage, rm *relayManager) error {
 	var p struct {
-		Action string       `json:"action"`
+		Action string `json:"action"`
+		Self   *struct {
+			NodeID     int    `json:"node_id"`
+			MeshIP     string `json:"mesh_ip"`
+			ListenPort int    `json:"listen_port"`
+		} `json:"self"`
 		Peers  []peerConfig `json:"peers"`
 		Peer   *peerConfig  `json:"peer"`
 		Pubkey string       `json:"public_key"`
@@ -403,7 +408,17 @@ func handleSync(ctx context.Context, conn *websocket.Conn, iface, msgID string, 
 	var syncErr error
 	switch p.Action {
 	case "full_sync":
+		// Provision interface if we have self info
+		if p.Self != nil && p.Self.MeshIP != "" {
+			if err := ensureInterface(iface, p.Self.ListenPort, p.Self.MeshIP); err != nil {
+				log.Printf("interface provisioning: %v", err)
+			}
+		}
 		syncErr = wgSyncFull(iface, p.Peers)
+		// Update DNS entries for peers
+		if err := updateHosts(p.Peers); err != nil {
+			log.Printf("dns update: %v", err)
+		}
 		// Update relay manager's node map
 		if rm != nil {
 			nodeMap := make(map[string]int)
