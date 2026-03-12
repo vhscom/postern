@@ -29,22 +29,44 @@ const (
 	wsMsgRateMax        = 60
 )
 
+// checkWSOrigin validates the Origin header against the configured allowlist.
+// Non-browser clients (no Origin) are always allowed.
+func checkWSOrigin(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return true // non-browser clients
+	}
+	if cfg.WSAllowedOrigins == "" {
+		return false // block all browser origins by default
+	}
+	for _, allowed := range strings.Split(cfg.WSAllowedOrigins, ",") {
+		if strings.TrimSpace(allowed) == origin {
+			return true
+		}
+	}
+	return false
+}
+
 var wsUpgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool {
-		origin := r.Header.Get("Origin")
-		if origin == "" {
-			return true // non-browser clients
-		}
-		if cfg.WSAllowedOrigins == "" {
-			return false // block all browser origins by default
-		}
-		for _, allowed := range strings.Split(cfg.WSAllowedOrigins, ",") {
-			if strings.TrimSpace(allowed) == origin {
-				return true
-			}
-		}
-		return false
-	},
+	CheckOrigin: checkWSOrigin,
+}
+
+// wsConn wraps a websocket.Conn with a mutex for safe concurrent writes.
+type wsConn struct {
+	*websocket.Conn
+	wmu sync.Mutex
+}
+
+func (c *wsConn) safeWrite(messageType int, data []byte) error {
+	c.wmu.Lock()
+	defer c.wmu.Unlock()
+	return c.Conn.WriteMessage(messageType, data)
+}
+
+func (c *wsConn) safeWriteControl(messageType int, data []byte, deadline time.Time) error {
+	c.wmu.Lock()
+	defer c.wmu.Unlock()
+	return c.Conn.WriteControl(messageType, data, deadline)
 }
 
 // Allowed capabilities by trust level
@@ -61,10 +83,11 @@ func handleOpsWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	conn, err := wsUpgrader.Upgrade(w, r, nil)
+	raw, err := wsUpgrader.Upgrade(w, r, nil)
 	if err != nil {
 		return
 	}
+	conn := &wsConn{Conn: raw}
 	defer conn.Close()
 
 	conn.SetReadLimit(1 << 20) // 1MB
@@ -126,7 +149,7 @@ func handleOpsWS(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func negotiateCapabilities(conn *websocket.Conn, agent *AgentPrincipal, connID string) map[string]bool {
+func negotiateCapabilities(conn *wsConn, agent *AgentPrincipal, connID string) map[string]bool {
 	conn.SetReadDeadline(time.Now().Add(wsHandshakeDeadline))
 	_, raw, err := conn.ReadMessage()
 	if err != nil {
@@ -167,7 +190,7 @@ func negotiateCapabilities(conn *websocket.Conn, agent *AgentPrincipal, connID s
 		"denied":        denied,
 	}
 	b, _ := json.Marshal(resp)
-	conn.WriteMessage(websocket.TextMessage, b)
+	conn.safeWrite(websocket.TextMessage, b)
 
 	emitEvent("ws.capability_granted", "", 0, "", 200, map[string]any{
 		"connectionId": connID, "agent": agent.Name,
@@ -176,7 +199,7 @@ func negotiateCapabilities(conn *websocket.Conn, agent *AgentPrincipal, connID s
 	return granted
 }
 
-func heartbeatLoop(conn *websocket.Conn, agent *AgentPrincipal, connID string, done chan struct{}, closeDone func()) {
+func heartbeatLoop(conn *wsConn, agent *AgentPrincipal, connID string, done chan struct{}, closeDone func()) {
 	ticker := time.NewTicker(wsHeartbeatInterval)
 	defer ticker.Stop()
 
@@ -200,18 +223,18 @@ func heartbeatLoop(conn *websocket.Conn, agent *AgentPrincipal, connID string, d
 			}
 
 			hb := map[string]any{
-				"type":             "heartbeat",
-				"ts":               time.Now().Unix(),
-				"next_check_ms":    wsHeartbeatInterval.Milliseconds(),
-				"ping_timeout_ms":  wsPingDeadline.Milliseconds(),
+				"type":            "heartbeat",
+				"ts":              time.Now().Unix(),
+				"next_check_ms":   wsHeartbeatInterval.Milliseconds(),
+				"ping_timeout_ms": wsPingDeadline.Milliseconds(),
 			}
 			b, _ := json.Marshal(hb)
-			conn.WriteMessage(websocket.TextMessage, b)
+			conn.safeWrite(websocket.TextMessage, b)
 		}
 	}
 }
 
-func handleAgentMessage(conn *websocket.Conn, agent *AgentPrincipal, granted map[string]bool, raw []byte, connID string, subs *subscriptions) {
+func handleAgentMessage(conn *wsConn, agent *AgentPrincipal, granted map[string]bool, raw []byte, connID string, subs *subscriptions) {
 	var msg struct {
 		Type    string          `json:"type"`
 		ID      string          `json:"id"`
@@ -229,7 +252,7 @@ func handleAgentMessage(conn *websocket.Conn, agent *AgentPrincipal, granted map
 			resp["id"] = msg.ID
 		}
 		b, _ := json.Marshal(resp)
-		conn.WriteMessage(websocket.TextMessage, b)
+		conn.safeWrite(websocket.TextMessage, b)
 
 	case "query_events":
 		if !granted["query_events"] {
@@ -267,7 +290,7 @@ func handleAgentMessage(conn *websocket.Conn, agent *AgentPrincipal, granted map
 	}
 }
 
-func handleWSQueryEvents(conn *websocket.Conn, id string, payload json.RawMessage) {
+func handleWSQueryEvents(conn *wsConn, id string, payload json.RawMessage) {
 	var p struct {
 		Since     string `json:"since"`
 		EventType string `json:"event_type"`
@@ -351,7 +374,7 @@ func handleWSQueryEvents(conn *websocket.Conn, id string, payload json.RawMessag
 	sendWSResult(conn, id, "query_events", map[string]any{"events": events})
 }
 
-func handleWSQuerySessions(conn *websocket.Conn, id string, payload json.RawMessage) {
+func handleWSQuerySessions(conn *wsConn, id string, payload json.RawMessage) {
 	var p struct {
 		UserID *int `json:"user_id"`
 		Active bool `json:"active"`
@@ -401,7 +424,7 @@ func handleWSQuerySessions(conn *websocket.Conn, id string, payload json.RawMess
 	sendWSResult(conn, id, "query_sessions", map[string]any{"sessions": sessions})
 }
 
-func handleWSRevokeSession(conn *websocket.Conn, id string, payload json.RawMessage, agent *AgentPrincipal, connID string) {
+func handleWSRevokeSession(conn *wsConn, id string, payload json.RawMessage, agent *AgentPrincipal, connID string) {
 	var p struct {
 		Scope    string `json:"scope"`
 		TargetID any    `json:"target_id"`
@@ -442,27 +465,27 @@ func handleWSRevokeSession(conn *websocket.Conn, id string, payload json.RawMess
 
 // --- WS helpers ---
 
-func sendWSResult(conn *websocket.Conn, id, typ string, payload any) {
+func sendWSResult(conn *wsConn, id, typ string, payload any) {
 	msg := map[string]any{"type": typ + ".result", "payload": payload}
 	if id != "" {
 		msg["id"] = id
 	}
 	b, _ := json.Marshal(msg)
-	conn.WriteMessage(websocket.TextMessage, b)
+	conn.safeWrite(websocket.TextMessage, b)
 }
 
-func sendWSError(conn *websocket.Conn, id, code, message string) {
+func sendWSError(conn *wsConn, id, code, message string) {
 	msg := map[string]any{"type": "error", "code": code, "message": message}
 	if id != "" {
 		msg["id"] = id
 	}
 	b, _ := json.Marshal(msg)
-	conn.WriteMessage(websocket.TextMessage, b)
+	conn.safeWrite(websocket.TextMessage, b)
 }
 
-func closeWSAgent(conn *websocket.Conn, code int, reason string) {
+func closeWSAgent(conn *wsConn, code int, reason string) {
 	msg := websocket.FormatCloseMessage(code, reason)
-	conn.WriteControl(websocket.CloseMessage, msg, time.Now().Add(time.Second))
+	conn.safeWriteControl(websocket.CloseMessage, msg, time.Now().Add(time.Second))
 	conn.Close()
 }
 
@@ -507,7 +530,7 @@ func (s *subscriptions) stopAll() {
 	}
 }
 
-func handleWSSubscribeEvents(conn *websocket.Conn, id string, payload json.RawMessage, subs *subscriptions) {
+func handleWSSubscribeEvents(conn *wsConn, id string, payload json.RawMessage, subs *subscriptions) {
 	var p struct {
 		Types []string `json:"types"`
 	}
@@ -525,7 +548,7 @@ func handleWSSubscribeEvents(conn *websocket.Conn, id string, payload json.RawMe
 		ack["id"] = id
 	}
 	b, _ := json.Marshal(ack)
-	conn.WriteMessage(websocket.TextMessage, b)
+	conn.safeWrite(websocket.TextMessage, b)
 
 	stop := make(chan struct{})
 	subs.start("events", stop)
@@ -562,7 +585,7 @@ func handleWSSubscribeEvents(conn *websocket.Conn, id string, payload json.RawMe
 					"payload": e,
 				}
 				b, _ := json.Marshal(msg)
-				if err := conn.WriteMessage(websocket.TextMessage, b); err != nil {
+				if err := conn.safeWrite(websocket.TextMessage, b); err != nil {
 					return
 				}
 			}
@@ -573,13 +596,13 @@ func handleWSSubscribeEvents(conn *websocket.Conn, id string, payload json.RawMe
 					"payload": map[string]any{"queued": len(events)},
 				}
 				b, _ := json.Marshal(bp)
-				conn.WriteMessage(websocket.TextMessage, b)
+				conn.safeWrite(websocket.TextMessage, b)
 			}
 		}
 	}()
 }
 
-func handleWSUnsubscribeEvents(conn *websocket.Conn, id string, subs *subscriptions) {
+func handleWSUnsubscribeEvents(conn *wsConn, id string, subs *subscriptions) {
 	stopped := subs.stop("events")
 	sendWSResult(conn, id, "unsubscribe_events", map[string]any{"unsubscribed": stopped})
 }
@@ -641,4 +664,3 @@ func pollNewEvents(since string, types []string) []map[string]any {
 	}
 	return events
 }
-

@@ -24,7 +24,7 @@ const (
 
 // --- Password hashing (PBKDF2-SHA384, NIST SP 800-132) ---
 
-// hashPassword returns "$pbkdf2-sha384$v1$100000$salt$hash$digest".
+// hashPassword returns "$pbkdf2-sha384$v1$210000$salt$hash$digest".
 func hashPassword(password string) (string, error) {
 	password = normalizePassword(password)
 	salt := make([]byte, saltBytes)
@@ -90,13 +90,14 @@ type TokenClaims struct {
 }
 
 func signToken(uid int, sid, typ, secret string, expiry time.Duration) (string, error) {
+	now := timeNow()
 	claims := TokenClaims{
 		UID: uid,
 		SID: sid,
 		Typ: typ,
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(expiry)),
-			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			ExpiresAt: jwt.NewNumericDate(now.Add(expiry)),
+			IssuedAt:  jwt.NewNumericDate(now),
 		},
 	}
 	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(secret))

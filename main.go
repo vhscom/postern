@@ -148,16 +148,16 @@ func main() {
 
 func loadConfig() *Config {
 	c := &Config{
-		Addr:          envOr("ADDR", ":8080"),
-		DBPath:        envOr("DB_PATH", "postern.db"),
-		AccessSecret:  mustEnv("JWT_ACCESS_SECRET"),
-		RefreshSecret: mustEnv("JWT_REFRESH_SECRET"),
-		AgentSecret:   os.Getenv("AGENT_PROVISIONING_SECRET"),
-		GatewayURL:    os.Getenv("GATEWAY_URL"),
-		GatewayToken:  os.Getenv("GATEWAY_TOKEN"),
-		CookieSecure:  os.Getenv("ENVIRONMENT") == "production",
+		Addr:             envOr("ADDR", ":8080"),
+		DBPath:           envOr("DB_PATH", "postern.db"),
+		AccessSecret:     mustEnv("JWT_ACCESS_SECRET"),
+		RefreshSecret:    mustEnv("JWT_REFRESH_SECRET"),
+		AgentSecret:      os.Getenv("AGENT_PROVISIONING_SECRET"),
+		GatewayURL:       os.Getenv("GATEWAY_URL"),
+		GatewayToken:     os.Getenv("GATEWAY_TOKEN"),
+		CookieSecure:     os.Getenv("ENVIRONMENT") == "production",
 		WSAllowedOrigins: os.Getenv("WS_ALLOWED_ORIGINS"),
-		Environment:   envOr("ENVIRONMENT", "development"),
+		Environment:      envOr("ENVIRONMENT", "development"),
 	}
 	if c.GatewayURL != "" && !isSafeURL(c.GatewayURL) {
 		log.Fatal("GATEWAY_URL blocked by SSRF check")

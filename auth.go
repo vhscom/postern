@@ -24,10 +24,11 @@ func handleRegister(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") {
 			emitEvent("registration.failure", clientIP(r), 0, r.UserAgent(), 409, map[string]any{"email": domain})
-			respondError(w, r, http.StatusConflict, "EMAIL_EXISTS", "Registration failed")
-			return
+		} else {
+			logError("registration.insert", err)
 		}
-		respondError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Registration failed")
+		// Return identical response to prevent email enumeration
+		respondSuccess(w, r, http.StatusCreated, "Registration successful", "/#registered")
 		return
 	}
 	emitEvent("registration.success", clientIP(r), 0, r.UserAgent(), 201, map[string]any{"email": domain})
@@ -162,22 +163,16 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 		status = "degraded"
 		code = http.StatusServiceUnavailable
 	}
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
-	jsonOK(w, map[string]any{"status": status, "timestamp": fmt.Sprintf("%d", nowUnix())})
+	json.NewEncoder(w).Encode(map[string]any{"status": status, "timestamp": fmt.Sprintf("%d", nowUnix())})
 }
 
 func extractChallenge(r *http.Request) (nonce, solution string) {
 	ct := r.Header.Get("Content-Type")
 	if strings.Contains(ct, "application/json") {
-		// Body was already partially consumed by parseCredentials if called before.
-		// For login, challenge extraction must happen first. Use query params as fallback.
 		nonce = r.URL.Query().Get("challengeNonce")
 		solution = r.URL.Query().Get("challengeSolution")
-		if nonce == "" {
-			// Try to peek at raw body — but since JSON body is consumed once,
-			// the caller sends nonce/solution as query params or in the JSON body.
-			// For simplicity, we support query params for challenge fields.
-		}
 		return
 	}
 	r.ParseForm()
@@ -187,4 +182,3 @@ func extractChallenge(r *http.Request) (nonce, solution string) {
 func nowUnix() int64 {
 	return timeNow().Unix()
 }
-

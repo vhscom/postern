@@ -78,12 +78,12 @@ func TestRegistrationAndLogin(t *testing.T) {
 		t.Fatalf("register: expected 201, got %d: %v", resp.StatusCode, body)
 	}
 
-	// Duplicate registration
+	// Duplicate registration — returns 201 to prevent email enumeration
 	resp, _ = jsonPost(srv.URL+"/auth/register", map[string]string{
 		"email": "test@example.com", "password": "anotherpassword",
 	}, nil)
-	if resp.StatusCode != 409 {
-		t.Fatalf("duplicate: expected 409, got %d", resp.StatusCode)
+	if resp.StatusCode != 201 {
+		t.Fatalf("duplicate: expected 201 (no enumeration leak), got %d", resp.StatusCode)
 	}
 
 	// Login

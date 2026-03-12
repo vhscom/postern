@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -183,9 +184,23 @@ func isSafeURL(raw string) bool {
 		return false
 	}
 	h := strings.ToLower(u.Hostname())
-	for _, prefix := range []string{"169.254.", "fe80:", "[fe80:", "metadata.google.", "metadata.internal"} {
+	for _, blocked := range []string{"localhost", "127.0.0.1", "0.0.0.0", "[::1]", "::1"} {
+		if h == blocked {
+			return false
+		}
+	}
+	for _, prefix := range []string{"169.254.", "10.", "192.168.", "fe80:", "[fe80:", "metadata.google.", "metadata.internal"} {
 		if strings.HasPrefix(h, prefix) {
 			return false
+		}
+	}
+	if strings.HasPrefix(h, "172.") && len(h) > 4 {
+		// 172.16.0.0/12
+		second := h[4:]
+		if i := strings.Index(second, "."); i > 0 {
+			if n, err := strconv.Atoi(second[:i]); err == nil && n >= 16 && n <= 31 {
+				return false
+			}
 		}
 	}
 	return true

@@ -11,8 +11,8 @@ import (
 )
 
 const (
-	maxMessageSize = 1 << 20         // 1 MB
-	rateMax        = 10              // messages per 1-second window
+	maxMessageSize = 1 << 20 // 1 MB
+	rateMax        = 10      // messages per 1-second window
 	idleTimeout    = 30 * time.Minute
 	dialTimeout    = 5 * time.Second
 	writeWait      = 10 * time.Second
@@ -21,16 +21,18 @@ const (
 )
 
 const (
-	codeBackendDown     = 4502
-	codeSuperseded      = 4012
-	codeRateLimited     = 4029
-	codeSessionRevoked  = 4010
+	codeBackendDown    = 4502
+	codeSuperseded     = 4012
+	codeRateLimited    = 4029
+	codeSessionRevoked = 4010
 )
 
 var (
 	activeBridge   *websocket.Conn
 	activeBridgeMu sync.Mutex
-	bridgeUpgrader = websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
+	bridgeUpgrader = websocket.Upgrader{
+		CheckOrigin: checkWSOrigin,
+	}
 )
 
 func newBridge() http.Handler {
