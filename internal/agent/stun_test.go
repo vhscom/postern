@@ -58,11 +58,11 @@ func TestParseSTUNResponse(t *testing.T) {
 	port := uint16(3478)
 
 	// Build attribute
-	attr := make([]byte, 12) // 4 header + 8 value
+	attr := make([]byte, 12)                      // 4 header + 8 value
 	binary.BigEndian.PutUint16(attr[0:2], 0x0020) // XOR-MAPPED-ADDRESS
 	binary.BigEndian.PutUint16(attr[2:4], 8)      // length
-	attr[4] = 0x00                                  // reserved
-	attr[5] = 0x01                                  // IPv4
+	attr[4] = 0x00                                // reserved
+	attr[5] = 0x01                                // IPv4
 
 	xPort := port ^ uint16(stunMagic>>16)
 	binary.BigEndian.PutUint16(attr[6:8], xPort)
@@ -75,7 +75,7 @@ func TestParseSTUNResponse(t *testing.T) {
 
 	// Build header
 	header := make([]byte, 20)
-	binary.BigEndian.PutUint16(header[0:2], 0x0101)          // Binding Success Response
+	binary.BigEndian.PutUint16(header[0:2], 0x0101)            // Binding Success Response
 	binary.BigEndian.PutUint16(header[2:4], uint16(len(attr))) // message length
 	binary.BigEndian.PutUint32(header[4:8], stunMagic)
 

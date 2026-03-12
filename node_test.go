@@ -59,8 +59,8 @@ func TestNodeCreate(t *testing.T) {
 	defer srv.Close()
 
 	resp, body := jsonPost(srv.URL+"/account/nodes", map[string]string{
-		"label":     "gateway",
-		"wg_pubkey": "xTIBA5rboUvnH4htodjb6e697QjLERt1NAB4mZqp8Dg=",
+		"label":       "gateway",
+		"wg_pubkey":   "xTIBA5rboUvnH4htodjb6e697QjLERt1NAB4mZqp8Dg=",
 		"allowed_ips": "10.0.0.1/32",
 		"wg_endpoint": "1.2.3.4:51820",
 	}, cookies)

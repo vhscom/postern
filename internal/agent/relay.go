@@ -46,7 +46,7 @@ type relayManager struct {
 	iface      string
 	wgPort     int
 	nodeMap    map[string]int // pubkey → nodeID
-	injectConn *net.UDPConn  // reusable conn for injecting packets to local WG
+	injectConn *net.UDPConn   // reusable conn for injecting packets to local WG
 	ctx        context.Context
 	cancelFn   context.CancelFunc
 }

@@ -110,7 +110,7 @@ func parseSTUNResponse(data []byte, txID [12]byte) (string, error) {
 
 		switch attrType {
 		case 0x0020: // XOR-MAPPED-ADDRESS
-			return parseXORMappedAddress(data[offset:offset+int(attrLen)])
+			return parseXORMappedAddress(data[offset : offset+int(attrLen)])
 		case 0x0001: // MAPPED-ADDRESS (fallback)
 			return parseMappedAddress(data[offset : offset+int(attrLen)])
 		}

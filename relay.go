@@ -23,8 +23,8 @@ type relayState struct {
 }
 
 var relayRouter struct {
-	mu      sync.RWMutex
-	byNode  map[int]*relayState // keyed by source node ID
+	mu     sync.RWMutex
+	byNode map[int]*relayState // keyed by source node ID
 }
 
 func init() {
