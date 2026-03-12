@@ -30,9 +30,9 @@ func handleNodeList(w http.ResponseWriter, r *http.Request) {
 	tier := getUserTier(claims.UID)
 
 	rows, err := store.Query(
-		`SELECT n.label, n.wg_pubkey, n.wg_endpoint, n.wg_listen_port, n.interface_name,
-			n.last_seen_at, n.created_at, n.updated_at
-		FROM user_node n WHERE n.user_id = ? ORDER BY n.created_at`,
+		`SELECT label, wg_pubkey, wg_endpoint, wg_listen_port, allowed_ips, persistent_keepalive,
+			interface_name, last_seen_at, created_at, updated_at
+		FROM user_node WHERE user_id = ? ORDER BY created_at`,
 		claims.UID,
 	)
 	if err != nil {
@@ -46,6 +46,8 @@ func handleNodeList(w http.ResponseWriter, r *http.Request) {
 		WGPubkey   string  `json:"wg_pubkey"`
 		WGEndpoint *string `json:"wg_endpoint"`
 		ListenPort int     `json:"wg_listen_port"`
+		AllowedIPs string  `json:"allowed_ips"`
+		Keepalive  int     `json:"persistent_keepalive"`
 		Interface  string  `json:"interface_name"`
 		LastSeenAt *string `json:"last_seen_at"`
 		CreatedAt  string  `json:"created_at"`
@@ -54,8 +56,8 @@ func handleNodeList(w http.ResponseWriter, r *http.Request) {
 	var nodes []node
 	for rows.Next() {
 		var n node
-		if err := rows.Scan(&n.Label, &n.WGPubkey, &n.WGEndpoint, &n.ListenPort, &n.Interface,
-			&n.LastSeenAt, &n.CreatedAt, &n.UpdatedAt); err != nil {
+		if err := rows.Scan(&n.Label, &n.WGPubkey, &n.WGEndpoint, &n.ListenPort, &n.AllowedIPs,
+			&n.Keepalive, &n.Interface, &n.LastSeenAt, &n.CreatedAt, &n.UpdatedAt); err != nil {
 			continue
 		}
 		nodes = append(nodes, n)
@@ -78,6 +80,8 @@ func handleNodeCreate(w http.ResponseWriter, r *http.Request) {
 		WGPubkey   string `json:"wg_pubkey"`
 		WGEndpoint string `json:"wg_endpoint"`
 		ListenPort int    `json:"wg_listen_port"`
+		AllowedIPs string `json:"allowed_ips"`
+		Keepalive  int    `json:"persistent_keepalive"`
 		Interface  string `json:"interface_name"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -99,8 +103,16 @@ func handleNodeCreate(w http.ResponseWriter, r *http.Request) {
 		respondError(w, r, http.StatusBadRequest, "VALIDATION_ERROR", "Invalid WireGuard public key")
 		return
 	}
+	body.AllowedIPs = strings.TrimSpace(body.AllowedIPs)
+	if body.AllowedIPs == "" {
+		respondError(w, r, http.StatusBadRequest, "VALIDATION_ERROR", "allowed_ips required (e.g. 10.0.0.1/32)")
+		return
+	}
 	if body.ListenPort == 0 {
 		body.ListenPort = 51820
+	}
+	if body.Keepalive == 0 {
+		body.Keepalive = 25
 	}
 	if body.Interface == "" {
 		body.Interface = "wg0"
@@ -142,12 +154,11 @@ func handleNodeCreate(w http.ResponseWriter, r *http.Request) {
 		wgEndpoint = &body.WGEndpoint
 	}
 	_, err = store.Exec(
-		`INSERT INTO user_node (user_id, label, wg_pubkey, wg_endpoint, wg_listen_port, interface_name, agent_credential_id)
-		VALUES (?,?,?,?,?,?,?)`,
-		claims.UID, body.Label, body.WGPubkey, wgEndpoint, body.ListenPort, body.Interface, credID,
+		`INSERT INTO user_node (user_id, label, wg_pubkey, wg_endpoint, wg_listen_port, allowed_ips, persistent_keepalive, interface_name, agent_credential_id)
+		VALUES (?,?,?,?,?,?,?,?,?)`,
+		claims.UID, body.Label, body.WGPubkey, wgEndpoint, body.ListenPort, body.AllowedIPs, body.Keepalive, body.Interface, credID,
 	)
 	if err != nil {
-		// Rollback credential
 		store.Exec("DELETE FROM agent_credential WHERE id = ?", credID)
 		if strings.Contains(err.Error(), "UNIQUE") {
 			respondError(w, r, http.StatusConflict, "NODE_EXISTS", "Node with this label already exists")
@@ -159,6 +170,9 @@ func handleNodeCreate(w http.ResponseWriter, r *http.Request) {
 
 	emitEvent("node.created", clientIP(r), claims.UID, r.UserAgent(), http.StatusCreated,
 		map[string]any{"label": body.Label})
+
+	// New node joins the mesh — notify all connected nodes
+	go notifyNodeSync(claims.UID)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -177,7 +191,6 @@ func handleNodeDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Find the node and its credential
 	var nodeID, credID int
 	err := store.QueryRow(
 		"SELECT id, agent_credential_id FROM user_node WHERE user_id = ? AND label = ?",
@@ -188,11 +201,14 @@ func handleNodeDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Revoke agent credential and delete node
 	store.Exec("UPDATE agent_credential SET revoked_at = datetime('now') WHERE id = ?", credID)
 	store.Exec("DELETE FROM user_node WHERE id = ?", nodeID)
 
 	emitEvent("node.deleted", clientIP(r), claims.UID, r.UserAgent(), http.StatusOK,
 		map[string]any{"label": label})
+
+	// Node left the mesh — notify remaining connected nodes
+	go notifyNodeSync(claims.UID)
+
 	jsonOK(w, map[string]any{"ok": true})
 }

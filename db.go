@@ -121,6 +121,8 @@ func migrate() {
 				wg_pubkey TEXT NOT NULL,
 				wg_endpoint TEXT,
 				wg_listen_port INTEGER NOT NULL DEFAULT 51820,
+				allowed_ips TEXT NOT NULL DEFAULT '10.0.0.0/32',
+				persistent_keepalive INTEGER NOT NULL DEFAULT 25,
 				interface_name TEXT NOT NULL DEFAULT 'wg0',
 				agent_credential_id INTEGER REFERENCES agent_credential(id),
 				last_seen_at TEXT,

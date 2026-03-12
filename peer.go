@@ -164,9 +164,6 @@ func handlePeerUpsert(w http.ResponseWriter, r *http.Request) {
 	emitEvent("peer.upsert", clientIP(r), claims.UID, r.UserAgent(), status,
 		map[string]any{"label": body.Label})
 
-	// Push to connected nodes
-	go notifyNodeSync(claims.UID)
-
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(map[string]any{"ok": true, "label": body.Label})
@@ -194,9 +191,6 @@ func handlePeerDelete(w http.ResponseWriter, r *http.Request) {
 
 	emitEvent("peer.delete", clientIP(r), claims.UID, r.UserAgent(), http.StatusOK,
 		map[string]any{"label": label})
-
-	// Push to connected nodes
-	go notifyNodeSync(claims.UID)
 
 	jsonOK(w, map[string]any{"ok": true})
 }

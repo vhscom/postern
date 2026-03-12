@@ -14,93 +14,104 @@ type connectedNode struct {
 	agentID int
 	userID  int
 	nodeID  int
-	label   string
 }
 
-var nodes struct {
+var nodeRegistry struct {
 	mu   sync.RWMutex
 	byID map[int]*connectedNode // keyed by node ID
 }
 
 func init() {
-	nodes.byID = make(map[int]*connectedNode)
+	nodeRegistry.byID = make(map[int]*connectedNode)
 }
 
-// registerNode adds a node agent to the connected registry.
 func registerNode(n *connectedNode) {
-	nodes.mu.Lock()
-	defer nodes.mu.Unlock()
-	nodes.byID[n.nodeID] = n
+	nodeRegistry.mu.Lock()
+	defer nodeRegistry.mu.Unlock()
+	nodeRegistry.byID[n.nodeID] = n
 }
 
-// unregisterNode removes a node agent from the registry.
 func unregisterNode(nodeID int) {
-	nodes.mu.Lock()
-	defer nodes.mu.Unlock()
-	delete(nodes.byID, nodeID)
+	nodeRegistry.mu.Lock()
+	defer nodeRegistry.mu.Unlock()
+	delete(nodeRegistry.byID, nodeID)
 }
 
-// notifyNodeSync pushes the full peer set to all connected nodes for a user.
-// Called after peer upsert/delete. Excludes each node's own pubkey from its peer list.
+// notifyNodeSync pushes the mesh peer set to all connected nodes for a user.
+// Each node gets every OTHER node as a WireGuard peer. Nodes are the mesh.
 func notifyNodeSync(userID int) {
-	nodes.mu.RLock()
+	nodeRegistry.mu.RLock()
 	var targets []*connectedNode
-	for _, n := range nodes.byID {
+	for _, n := range nodeRegistry.byID {
 		if n.userID == userID {
 			targets = append(targets, n)
 		}
 	}
-	nodes.mu.RUnlock()
+	nodeRegistry.mu.RUnlock()
 
 	if len(targets) == 0 {
 		return
 	}
 
-	// Fetch all peers for this user
+	// Fetch all nodes for this user — these form the mesh
+	type meshPeer struct {
+		ID         int
+		Pubkey     string
+		Endpoint   *string
+		AllowedIPs string
+		Keepalive  int
+	}
 	rows, err := store.Query(
-		"SELECT wg_pubkey, endpoint, allowed_ips, persistent_keepalive FROM user_peer WHERE user_id = ?",
+		"SELECT id, wg_pubkey, wg_endpoint, allowed_ips, persistent_keepalive FROM user_node WHERE user_id = ?",
 		userID,
 	)
 	if err != nil {
-		log.Printf("notifyNodeSync: query peers: %v", err)
+		log.Printf("notifyNodeSync: query nodes: %v", err)
 		return
 	}
 	defer rows.Close()
 
-	type peer struct {
-		Pubkey     string `json:"public_key"`
-		Endpoint   string `json:"endpoint"`
+	var allNodes []meshPeer
+	for rows.Next() {
+		var n meshPeer
+		rows.Scan(&n.ID, &n.Pubkey, &n.Endpoint, &n.AllowedIPs, &n.Keepalive)
+		allNodes = append(allNodes, n)
+	}
+
+	// Each connected node gets all OTHER nodes as peers
+	type syncPeer struct {
+		PublicKey  string `json:"public_key"`
+		Endpoint   string `json:"endpoint,omitempty"`
 		AllowedIPs string `json:"allowed_ips"`
 		Keepalive  int    `json:"persistent_keepalive,omitempty"`
 	}
-	var allPeers []peer
-	for rows.Next() {
-		var p peer
-		rows.Scan(&p.Pubkey, &p.Endpoint, &p.AllowedIPs, &p.Keepalive)
-		allPeers = append(allPeers, p)
-	}
 
-	// Fetch each node's own pubkey to exclude
 	for _, target := range targets {
-		var nodePubkey string
-		store.QueryRow("SELECT wg_pubkey FROM user_node WHERE id = ?", target.nodeID).Scan(&nodePubkey)
-
-		// Filter out the node's own pubkey
-		var filtered []peer
-		for _, p := range allPeers {
-			if p.Pubkey != nodePubkey {
-				filtered = append(filtered, p)
+		var peers []syncPeer
+		for _, n := range allNodes {
+			if n.ID == target.nodeID {
+				continue // skip self
 			}
+			ep := ""
+			if n.Endpoint != nil {
+				ep = *n.Endpoint
+			}
+			peers = append(peers, syncPeer{
+				PublicKey:  n.Pubkey,
+				Endpoint:   ep,
+				AllowedIPs: n.AllowedIPs,
+				Keepalive:  n.Keepalive,
+			})
 		}
-		if filtered == nil {
-			filtered = []peer{}
+		if peers == nil {
+			peers = []syncPeer{}
 		}
 
 		msg := map[string]any{
 			"type": "wg.sync",
 			"payload": map[string]any{
 				"action": "full_sync",
-				"peers":  filtered,
+				"peers":  peers,
 			},
 		}
 		data, _ := json.Marshal(msg)
