@@ -168,7 +168,7 @@ func negotiateCapabilities(conn *wsConn, agent *AgentPrincipal, connID string) m
 
 	allowed := capsByTrust[agent.TrustLevel]
 	granted := map[string]bool{}
-	var denied []map[string]string
+	denied := []map[string]string{}
 	for _, cap := range msg.Capabilities {
 		if allowed[cap] {
 			granted[cap] = true

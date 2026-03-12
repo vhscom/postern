@@ -1126,8 +1126,12 @@ func (m model) viewEventDetail() string {
 	if e.UserID != nil {
 		userID = fmt.Sprintf("%d", *e.UserID)
 	}
+	ip := e.IPAddress
+	if ip == "" {
+		ip = "-"
+	}
 	labels := []string{"Type", "IP", "User", "Actor", "Time"}
-	values := []string{e.Type, e.IPAddress, userID, e.ActorID, e.CreatedAt}
+	values := []string{e.Type, ip, userID, e.ActorID, e.CreatedAt}
 
 	for i, label := range labels {
 		b.WriteString(fmt.Sprintf("  %s  %s\n", ui.HeaderStyle.Render(fmt.Sprintf("%-10s", label)), values[i]))
