@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"strconv"
@@ -286,6 +287,70 @@ func handleOpsEventStats(w http.ResponseWriter, r *http.Request) {
 		stats[typ] = count
 	}
 	jsonOK(w, map[string]any{"since": since, "stats": stats})
+}
+
+// GET /ops/subscriptions/{user_id}/history
+func handleOpsSubscriptionHistory(w http.ResponseWriter, r *http.Request) {
+	uid, err := strconv.Atoi(r.PathValue("user_id"))
+	if err != nil || uid <= 0 {
+		jsonError(w, 400, "VALIDATION_ERROR", "Invalid user_id")
+		return
+	}
+
+	// Current subscription state
+	var tier, customerID string
+	var periodEnd, createdAt, updatedAt sql.NullString
+	err = store.QueryRow(
+		"SELECT tier, stripe_customer_id, current_period_end, created_at, updated_at FROM user_subscription WHERE user_id = ?",
+		uid,
+	).Scan(&tier, &customerID, &periodEnd, &createdAt, &updatedAt)
+
+	var current map[string]any
+	if err == nil {
+		current = map[string]any{
+			"tier":               tier,
+			"stripe_customer_id": customerID,
+			"current_period_end": nullStringPtr(periodEnd),
+			"created_at":         nullStringPtr(createdAt),
+			"updated_at":         nullStringPtr(updatedAt),
+		}
+	}
+
+	// History
+	rows, err := store.Query(
+		"SELECT tier_from, tier_to, reason, created_at FROM subscription_history WHERE user_id = ? ORDER BY created_at",
+		uid,
+	)
+	if err != nil {
+		jsonError(w, 500, "INTERNAL_ERROR", "Query failed")
+		return
+	}
+	defer rows.Close()
+
+	var history []map[string]any
+	for rows.Next() {
+		var from, to, reason, at string
+		rows.Scan(&from, &to, &reason, &at)
+		history = append(history, map[string]any{
+			"tier_from": from, "tier_to": to, "reason": reason, "created_at": at,
+		})
+	}
+	if history == nil {
+		history = []map[string]any{}
+	}
+
+	jsonOK(w, map[string]any{
+		"user_id": uid,
+		"current": current,
+		"history": history,
+	})
+}
+
+func nullStringPtr(ns sql.NullString) *string {
+	if ns.Valid {
+		return &ns.String
+	}
+	return nil
 }
 
 // --- Helpers ---

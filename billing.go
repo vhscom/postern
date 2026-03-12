@@ -138,6 +138,8 @@ func handleCheckoutCompleted(raw json.RawMessage) {
 	userIDStr := session.Metadata["user_id"]
 	userID, _ := strconv.Atoi(userIDStr)
 
+	recordTierChange(session.Customer, tier, "checkout.completed")
+
 	_, err := store.Exec(
 		"UPDATE user_subscription SET tier = ?, updated_at = datetime('now') WHERE stripe_customer_id = ?",
 		tier, session.Customer,
@@ -161,6 +163,7 @@ func handleSubscriptionUpdated(raw json.RawMessage) {
 	}
 
 	if sub.Status != "active" && sub.Status != "trialing" {
+		recordTierChange(sub.Customer, "free", "subscription."+sub.Status)
 		if _, err := store.Exec(
 			"UPDATE user_subscription SET tier = 'free', current_period_end = datetime(?, 'unixepoch'), updated_at = datetime('now') WHERE stripe_customer_id = ?",
 			sub.CurrentPeriodEnd, sub.Customer,
@@ -189,6 +192,8 @@ func handleSubscriptionDeleted(raw json.RawMessage) {
 	var userID int
 	store.QueryRow("SELECT user_id FROM user_subscription WHERE stripe_customer_id = ?", sub.Customer).Scan(&userID)
 
+	recordTierChange(sub.Customer, "free", "subscription.deleted")
+
 	if _, err := store.Exec(
 		"UPDATE user_subscription SET tier = 'free', current_period_end = datetime('now'), updated_at = datetime('now') WHERE stripe_customer_id = ?",
 		sub.Customer,
@@ -197,6 +202,24 @@ func handleSubscriptionDeleted(raw json.RawMessage) {
 		return
 	}
 	emitEvent("billing.cancelled", "", userID, "", 200, nil)
+}
+
+// --- Subscription history ---
+
+func recordTierChange(customerID, tierTo, reason string) {
+	var userID int
+	var tierFrom string
+	err := store.QueryRow(
+		"SELECT user_id, tier FROM user_subscription WHERE stripe_customer_id = ?",
+		customerID,
+	).Scan(&userID, &tierFrom)
+	if err != nil || tierFrom == tierTo {
+		return
+	}
+	store.Exec(
+		"INSERT INTO subscription_history (user_id, tier_from, tier_to, reason) VALUES (?, ?, ?, ?)",
+		userID, tierFrom, tierTo, reason,
+	)
 }
 
 // --- Helpers ---

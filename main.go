@@ -95,6 +95,7 @@ func main() {
 	ops.Handle("POST /ops/sessions/revoke", requireAgentKey(requireWriteTrust(http.HandlerFunc(handleOpsSessionRevoke))))
 	ops.Handle("GET /ops/events", requireAgentKey(http.HandlerFunc(handleOpsEvents)))
 	ops.Handle("GET /ops/events/stats", requireAgentKey(http.HandlerFunc(handleOpsEventStats)))
+	ops.Handle("GET /ops/subscriptions/{user_id}/history", requireAgentKey(http.HandlerFunc(handleOpsSubscriptionHistory)))
 
 	// WebSocket multiplexer: Bearer → agent WS, Cookie → bridge proxy
 	ops.HandleFunc("GET /ops/ws", func(w http.ResponseWriter, r *http.Request) {

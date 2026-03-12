@@ -117,6 +117,71 @@ func TestWebhookSubscriptionDeleted(t *testing.T) {
 	}
 }
 
+func TestSubscriptionHistory(t *testing.T) {
+	cfg = &Config{DBPath: ":memory:"}
+	initDB(cfg.DBPath)
+
+	store.Exec("INSERT INTO account (email, password_data) VALUES ('test@x.com', 'hash')")
+	store.Exec("INSERT INTO user_subscription (user_id, stripe_customer_id, tier) VALUES (1, 'cus_hist', 'free')")
+
+	// free → pro (checkout)
+	handleCheckoutCompleted([]byte(`{"customer":"cus_hist","metadata":{"tier":"pro","user_id":"1"}}`))
+
+	// pro → free (cancellation)
+	handleSubscriptionDeleted([]byte(`{"customer":"cus_hist"}`))
+
+	// free → pro (re-subscribe)
+	store.Exec("UPDATE user_subscription SET tier = 'free' WHERE stripe_customer_id = 'cus_hist'")
+	handleCheckoutCompleted([]byte(`{"customer":"cus_hist","metadata":{"tier":"pro","user_id":"1"}}`))
+
+	rows, err := store.Query(
+		"SELECT tier_from, tier_to, reason FROM subscription_history WHERE user_id = 1 ORDER BY id",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+
+	expected := []struct{ from, to, reason string }{
+		{"free", "pro", "checkout.completed"},
+		{"pro", "free", "subscription.deleted"},
+		{"free", "pro", "checkout.completed"},
+	}
+	i := 0
+	for rows.Next() {
+		var from, to, reason string
+		rows.Scan(&from, &to, &reason)
+		if i >= len(expected) {
+			t.Fatalf("too many history rows")
+		}
+		if from != expected[i].from || to != expected[i].to || reason != expected[i].reason {
+			t.Errorf("row %d: got %s→%s (%s), want %s→%s (%s)",
+				i, from, to, reason, expected[i].from, expected[i].to, expected[i].reason)
+		}
+		i++
+	}
+	if i != len(expected) {
+		t.Errorf("expected %d history rows, got %d", len(expected), i)
+	}
+}
+
+func TestSubscriptionHistoryNoOpSkipped(t *testing.T) {
+	cfg = &Config{DBPath: ":memory:"}
+	initDB(cfg.DBPath)
+
+	store.Exec("INSERT INTO account (email, password_data) VALUES ('test@x.com', 'hash')")
+	store.Exec("INSERT INTO user_subscription (user_id, stripe_customer_id, tier) VALUES (1, 'cus_noop', 'free')")
+
+	// free → free should not record
+	handleSubscriptionDeleted([]byte(`{"customer":"cus_noop"}`))
+
+	var count int
+	store.QueryRow("SELECT COUNT(*) FROM subscription_history WHERE user_id = 1").Scan(&count)
+	if count != 0 {
+		t.Errorf("expected 0 history rows for no-op, got %d", count)
+	}
+}
+
 func TestWebhookBadJSON(t *testing.T) {
 	// Should not panic on bad input
 	handleCheckoutCompleted([]byte(`not json`))

@@ -91,6 +91,15 @@ func migrate() {
 			created_at TEXT DEFAULT (datetime('now')),
 			updated_at TEXT DEFAULT (datetime('now'))
 		)`,
+		`CREATE TABLE IF NOT EXISTS subscription_history (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			user_id INTEGER NOT NULL REFERENCES account(id),
+			tier_from TEXT NOT NULL,
+			tier_to TEXT NOT NULL,
+			reason TEXT NOT NULL,
+			created_at TEXT DEFAULT (datetime('now'))
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_sub_history_user ON subscription_history(user_id)`,
 	}
 	for _, s := range stmts {
 		if _, err := store.Exec(s); err != nil {

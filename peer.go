@@ -129,8 +129,8 @@ func handlePeerUpsert(w http.ResponseWriter, r *http.Request) {
 			"code":    "PEER_EXISTS",
 			"message": "Peer with this label already exists",
 			"existing": map[string]string{
-				"label":    body.Label,
-				"endpoint": existingEndpoint,
+				"label":     body.Label,
+				"endpoint":  existingEndpoint,
 				"wg_pubkey": existingWGPubkey,
 			},
 		})
