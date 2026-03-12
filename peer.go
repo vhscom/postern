@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"strings"
 )
@@ -215,6 +216,11 @@ func validEndpoint(s string) bool {
 	}
 	i := strings.LastIndex(s, ":")
 	return i > 0 && i < len(s)-1
+}
+
+func validAllowedIPs(s string) bool {
+	_, _, err := net.ParseCIDR(s)
+	return err == nil
 }
 
 func validWGPubkey(s string) bool {

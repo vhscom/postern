@@ -344,6 +344,30 @@ func TestPeerUnauthenticated(t *testing.T) {
 	}
 }
 
+func TestValidAllowedIPs(t *testing.T) {
+	tests := []struct {
+		input string
+		valid bool
+	}{
+		{"10.0.0.1/32", true},
+		{"192.168.1.0/24", true},
+		{"fd00::1/128", true},
+		{"0.0.0.0/0", true},
+		{"10.0.0.1", false},
+		{"not-cidr", false},
+		{"", false},
+		{"10.0.0.1/32\n127.0.0.1 evil.com", false},
+		{"10.0.0.1/32\nevil", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			if got := validAllowedIPs(tt.input); got != tt.valid {
+				t.Errorf("validAllowedIPs(%q) = %v, want %v", tt.input, got, tt.valid)
+			}
+		})
+	}
+}
+
 func TestGetUserTierDefault(t *testing.T) {
 	cfg = &Config{DBPath: ":memory:"}
 	initDB(cfg.DBPath)

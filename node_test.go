@@ -199,6 +199,65 @@ func TestNodeTierLimit(t *testing.T) {
 	}
 }
 
+func TestNodeCreateRejectsInvalidCIDR(t *testing.T) {
+	srv, cookies := setupNodeServer(t)
+	defer srv.Close()
+
+	tests := []struct {
+		name string
+		ips  string
+		code int
+	}{
+		{"bare-ip", "10.0.0.1", 400},
+		{"garbage", "not-cidr", 400},
+		{"newline-inject", "10.0.0.1/32\n127.0.0.1 evil.com", 400},
+		{"valid-cidr", "10.0.0.5/32", 201},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resp, _ := jsonPost(srv.URL+"/account/nodes", map[string]string{
+				"label":       "cidr-" + tt.name,
+				"wg_pubkey":   "xTIBA5rboUvnH4htodjb6e697QjLERt1NAB4mZqp8Dg=",
+				"allowed_ips": tt.ips,
+			}, cookies)
+			if resp.StatusCode != tt.code {
+				t.Errorf("allowed_ips=%q: expected %d, got %d", tt.ips, tt.code, resp.StatusCode)
+			}
+		})
+	}
+}
+
+func TestNodeUpdateRejectsInvalidCIDR(t *testing.T) {
+	srv, cookies := setupNodeServer(t)
+	defer srv.Close()
+
+	jsonPost(srv.URL+"/account/nodes", map[string]string{
+		"label": "update-cidr", "wg_pubkey": "xTIBA5rboUvnH4htodjb6e697QjLERt1NAB4mZqp8Dg=",
+		"allowed_ips": "10.0.0.1/32",
+	}, cookies)
+
+	tests := []struct {
+		name string
+		ips  string
+		code int
+	}{
+		{"bare-ip", "10.0.0.2", 400},
+		{"newline-inject", "10.0.0.1/32\nevil", 400},
+		{"valid-cidr", "10.0.0.99/32", 200},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ips := tt.ips
+			resp, _ := jsonPut(srv.URL+"/account/nodes/update-cidr", map[string]any{
+				"allowed_ips": &ips,
+			}, cookies)
+			if resp.StatusCode != tt.code {
+				t.Errorf("allowed_ips=%q: expected %d, got %d", tt.ips, tt.code, resp.StatusCode)
+			}
+		})
+	}
+}
+
 func TestComputeNodeStatus(t *testing.T) {
 	tests := []struct {
 		name       string

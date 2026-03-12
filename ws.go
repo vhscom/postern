@@ -371,6 +371,10 @@ func handleEndpointDiscovered(conn *wsConn, agent *AgentPrincipal, id string, pa
 		sendWSError(conn, id, "VALIDATION_ERROR", "Endpoint required")
 		return
 	}
+	if !validEndpoint(p.Endpoint) {
+		sendWSError(conn, id, "VALIDATION_ERROR", "Invalid endpoint")
+		return
+	}
 
 	nodeID, userID := lookupNodeForAgent(agent.ID)
 	if nodeID == 0 {
@@ -406,6 +410,10 @@ func handleKeyRotate(conn *wsConn, agent *AgentPrincipal, id string, payload jso
 	}
 	if json.Unmarshal(payload, &p) != nil || p.PublicKey == "" {
 		sendWSError(conn, id, "VALIDATION_ERROR", "Public key required")
+		return
+	}
+	if !validWGPubkey(p.PublicKey) {
+		sendWSError(conn, id, "VALIDATION_ERROR", "Invalid WireGuard public key")
 		return
 	}
 

@@ -115,6 +115,9 @@ func handleNodeCreate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		body.AllowedIPs = ip
+	} else if !validAllowedIPs(body.AllowedIPs) {
+		respondError(w, r, http.StatusBadRequest, "VALIDATION_ERROR", "Invalid allowed_ips (must be CIDR, e.g. 10.0.0.1/32)")
+		return
 	}
 	if body.ListenPort == 0 {
 		body.ListenPort = 51820
@@ -237,6 +240,10 @@ func handleNodeUpdate(w http.ResponseWriter, r *http.Request) {
 		v := strings.TrimSpace(*body.AllowedIPs)
 		if v == "" {
 			respondError(w, r, http.StatusBadRequest, "VALIDATION_ERROR", "allowed_ips cannot be empty")
+			return
+		}
+		if !validAllowedIPs(v) {
+			respondError(w, r, http.StatusBadRequest, "VALIDATION_ERROR", "Invalid allowed_ips (must be CIDR, e.g. 10.0.0.1/32)")
 			return
 		}
 		sets = append(sets, "allowed_ips = ?")

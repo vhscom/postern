@@ -25,6 +25,33 @@ func TestLookupNodeForAgentNotFound(t *testing.T) {
 	}
 }
 
+func TestValidEndpointRejectsInvalid(t *testing.T) {
+	bad := []string{"no-port", "", "just-host", ":::"}
+	for _, ep := range bad {
+		if validEndpoint(ep) {
+			t.Errorf("validEndpoint(%q) should be false", ep)
+		}
+	}
+	good := []string{"1.2.3.4:51820", "[::1]:51820", "example.com:51820"}
+	for _, ep := range good {
+		if !validEndpoint(ep) {
+			t.Errorf("validEndpoint(%q) should be true", ep)
+		}
+	}
+}
+
+func TestValidWGPubkeyRejectsInvalid(t *testing.T) {
+	bad := []string{"tooshort", "", "not-base64!!!", "xTIBA5rboUvnH4htodjb6e697QjLERt1NAB4mZqp8Dg"}
+	for _, k := range bad {
+		if validWGPubkey(k) {
+			t.Errorf("validWGPubkey(%q) should be false", k)
+		}
+	}
+	if !validWGPubkey("xTIBA5rboUvnH4htodjb6e697QjLERt1NAB4mZqp8Dg=") {
+		t.Error("valid pubkey rejected")
+	}
+}
+
 func TestEndpointSourcePreservation(t *testing.T) {
 	cfg = &Config{DBPath: ":memory:"}
 	initDB(cfg.DBPath)
