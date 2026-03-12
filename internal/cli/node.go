@@ -40,19 +40,22 @@ func RunNode() {
 }
 
 func printNodeUsage() {
-	fmt.Println("postern node - manage mesh nodes")
+	printTitle("postern node", "manage mesh nodes")
+	printHeading("Usage")
+	printCmd("postern node add [flags]", "Add this machine to the mesh")
+	printCmd("postern node list", "List all nodes in your mesh")
+	printCmd("postern node remove <label>", "Remove a node from the mesh")
 	fmt.Println()
-	fmt.Println("Usage:")
-	fmt.Println("  postern node add --label <name> --ip <mesh-ip>    Add this machine to the mesh")
-	fmt.Println("  postern node list                                  List all nodes in your mesh")
-	fmt.Println("  postern node remove <label>                        Remove a node from the mesh")
+	printHeading("Flags (add)")
+	printFlag("--label <name>", "Node name (required)")
+	printFlag("--ip <mesh-ip>", "Mesh IP, e.g. 10.0.0.1/32 (required)")
+	printFlag("--endpoint <addr>", "Public endpoint, e.g. 1.2.3.4:51820")
+	printFlag("--port <port>", "WireGuard listen port (default: 51820)")
+	printFlag("--interface <name>", "WireGuard interface (default: wg0)")
 	fmt.Println()
-	fmt.Println("Flags for 'add':")
-	fmt.Println("  --label       Node name (required)")
-	fmt.Println("  --ip          Mesh IP, e.g. 10.0.0.1/32 (required)")
-	fmt.Println("  --endpoint    Public endpoint, e.g. 1.2.3.4:51820 (optional)")
-	fmt.Println("  --port        WireGuard listen port (default: 51820)")
-	fmt.Println("  --interface   WireGuard interface name (default: wg0)")
+	printHeading("Example")
+	fmt.Printf("  %s\n", cmdStyle.Render("postern node add --label gateway-nyc --ip 10.0.0.1/32 --endpoint 1.2.3.4:51820"))
+	fmt.Printf("  %s\n", cmdStyle.Render("postern node add --label laptop --ip 10.0.0.2/32"))
 }
 
 func runNodeAdd() {

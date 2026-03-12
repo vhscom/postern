@@ -19,12 +19,7 @@ func RunLogin() {
 	}
 
 	if os.Args[1] == "--help" || os.Args[1] == "-h" {
-		fmt.Println("postern login - authenticate with a postern server")
-		fmt.Println()
-		fmt.Println("Usage:")
-		fmt.Println("  postern login <server-url>")
-		fmt.Println()
-		fmt.Println("Stores session credentials in ~/.config/postern/session.json")
+		printLoginHelp()
 		return
 	}
 
@@ -104,4 +99,14 @@ func RunLogin() {
 	}
 
 	fmt.Printf("Logged in to %s\n", server)
+}
+
+func printLoginHelp() {
+	printTitle("postern login", "authenticate with a postern server")
+	printHeading("Usage")
+	printCmd("postern login <server-url>", "")
+	fmt.Println()
+	printHeading("Example")
+	fmt.Printf("  %s\n\n", cmdStyle.Render("postern login https://postern.example.com"))
+	fmt.Printf("  Session stored in %s\n", dimStyle.Render("~/.config/postern/session.json"))
 }

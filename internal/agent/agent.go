@@ -11,7 +11,16 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/coder/websocket"
+)
+
+var (
+	titleStyle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("5"))
+	headingStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("6"))
+	cmdStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
+	flagStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
+	dimStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
 )
 
 type config struct {
@@ -34,19 +43,7 @@ func Run() {
 			runUninstall()
 			return
 		case "--help", "-h", "help":
-			fmt.Println("postern agent - WireGuard mesh agent")
-			fmt.Println()
-			fmt.Println("Usage:")
-			fmt.Println("  postern agent              Connect to server and sync WireGuard config")
-			fmt.Println("  postern agent init <server-url> <api-key> [interface]")
-			fmt.Println("  postern agent install      Install as system service (launchd/systemd)")
-			fmt.Println("  postern agent uninstall    Remove system service")
-			fmt.Println()
-			fmt.Println("Environment:")
-			fmt.Println("  POSTERN_AGENT_SERVER       Server URL (overrides config file)")
-			fmt.Println("  POSTERN_AGENT_TOKEN        API key (overrides config file)")
-			fmt.Println("  POSTERN_AGENT_INTERFACE    WireGuard interface (default: wg0)")
-			fmt.Println("  POSTERN_AGENT_CONFIG_DIR   Config directory (default: ~/.config/postern)")
+			printAgentHelp()
 			return
 		}
 	}
@@ -58,6 +55,30 @@ func Run() {
 	defer stop()
 
 	connectLoop(ctx, cfg)
+}
+
+func printAgentHelp() {
+	title := func(n, t string) { fmt.Printf("%s %s\n\n", titleStyle.Render(n), dimStyle.Render("— "+t)) }
+	heading := func(s string) { fmt.Printf("%s\n", headingStyle.Render(s)) }
+	cmd := func(c, d string) {
+		fmt.Printf("  %s  %s\n", cmdStyle.Render(fmt.Sprintf("%-42s", c)), dimStyle.Render(d))
+	}
+	env := func(n, d string) {
+		fmt.Printf("  %s  %s\n", flagStyle.Render(fmt.Sprintf("%-28s", n)), dimStyle.Render(d))
+	}
+
+	title("postern agent", "WireGuard mesh agent")
+	heading("Usage")
+	cmd("postern agent", "Connect and sync WireGuard config")
+	cmd("postern agent init <server> <key> [iface]", "Write config from server URL and API key")
+	cmd("postern agent install", "Install as system service (launchd/systemd)")
+	cmd("postern agent uninstall", "Remove system service")
+	fmt.Println()
+	heading("Environment")
+	env("POSTERN_AGENT_SERVER", "Server URL (overrides config file)")
+	env("POSTERN_AGENT_TOKEN", "API key (overrides config file)")
+	env("POSTERN_AGENT_INTERFACE", "WireGuard interface (default: wg0)")
+	env("POSTERN_AGENT_CONFIG_DIR", "Config directory (default: ~/.config/postern)")
 }
 
 func runInit() {

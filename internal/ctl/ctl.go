@@ -1567,52 +1567,52 @@ func (m model) viewFrameDetail() string {
 }
 
 func printUsage() {
-	heading := ui.TitleStyle.Render
-	label := ui.PromptStyle.Render
+	title := ui.TitleStyle.Render
+	heading := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("6")).Render
+	cmd := lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Render
+	flag := lipgloss.NewStyle().Foreground(lipgloss.Color("3")).Render
 	dim := ui.DimStyle.Render
 
-	fmt.Println(heading("postern ctl") + dim(" - postern ops control"))
+	fmt.Printf("%s %s\n\n", title("postern ctl"), dim("— ops control TUI"))
+
+	fmt.Println(heading("Usage"))
+	fmt.Printf("  %s\n\n", cmd("postern ctl [flags]"))
+
+	fmt.Println(heading("Flags"))
+	fmt.Printf("  %s  %s\n", flag(fmt.Sprintf("%-20s", "--addr <url>")), dim("Ops endpoint (overrides POSTERNCTL_ADDR)"))
+	fmt.Printf("  %s  %s\n\n", flag(fmt.Sprintf("%-20s", "--help")), dim("Show this help"))
+
+	fmt.Println(heading("Environment"))
+	fmt.Printf("  %s  %s\n", flag(fmt.Sprintf("%-28s", "POSTERNCTL_ADDR")), dim("Ops endpoint URL (required)"))
+	fmt.Printf("  %s  %s\n", flag(fmt.Sprintf("%-28s", "POSTERNCTL_API_KEY")), dim("Agent API key for Bearer auth (required)"))
+	fmt.Printf("  %s  %s\n\n", flag(fmt.Sprintf("%-28s", "POSTERNCTL_PROVISIONING_SECRET")), dim("Provisioning secret (optional)"))
+
+	fmt.Println(heading("Interactive Commands"))
 	fmt.Println()
-	fmt.Println(heading("Usage:"))
-	fmt.Println("  postern ctl [flags]")
-	fmt.Println()
-	fmt.Println("  Launches an interactive TUI for managing postern operations.")
-	fmt.Println()
-	fmt.Println(heading("Flags:"))
-	fmt.Println("  " + label("--addr") + "  Ops endpoint address (overrides POSTERNCTL_ADDR)")
-	fmt.Println("  " + label("--help") + "  Show this help message")
-	fmt.Println()
-	fmt.Println(heading("Environment:"))
-	fmt.Println("  " + label("POSTERNCTL_ADDR") + "                Ops endpoint URL, e.g. http://localhost:9090 (required)")
-	fmt.Println("  " + label("POSTERNCTL_API_KEY") + "             Agent API key for Bearer auth (required)")
-	fmt.Println("  " + label("POSTERNCTL_PROVISIONING_SECRET") + "  Provisioning secret for agent management (optional)")
-	fmt.Println()
-	fmt.Println(heading("Commands (interactive):"))
-	fmt.Println()
-	fmt.Println("  " + label("Sessions"))
-	fmt.Println("    View active sessions          " + dim("List all active sessions"))
-	fmt.Println("    View sessions for user        " + dim("List sessions filtered by user ID"))
-	fmt.Println("    Revoke all sessions           " + dim("Expire every active session"))
-	fmt.Println("    Revoke sessions for user      " + dim("Expire all sessions for a user"))
-	fmt.Println("    Revoke specific session       " + dim("Expire a single session by ID"))
-	fmt.Println()
-	fmt.Println("  " + label("Events"))
-	fmt.Println("    View recent events            " + dim("List security events (last 24h)"))
-	fmt.Println("    View events for user          " + dim("List events filtered by user ID"))
-	fmt.Println("    View event stats              " + dim("Aggregate event counts by type"))
-	fmt.Println("    Tail events (live)            " + dim("Stream events in real time (f toggles frame inspector)"))
-	fmt.Println()
-	fmt.Println("  " + label("Subscriptions"))
-	fmt.Println("    View subscription history    " + dim("Show tier changes for a user"))
-	fmt.Println()
-	fmt.Println("  " + label("Nodes"))
-	fmt.Println("    View all nodes                " + dim("List all mesh nodes"))
-	fmt.Println("    View nodes for user           " + dim("List nodes filtered by user ID"))
-	fmt.Println()
-	fmt.Println("  " + label("Agents"))
-	fmt.Println("    List agents                   " + dim("Show agent credentials"))
-	fmt.Println("    Provision agent               " + dim("Create a new agent credential"))
-	fmt.Println("    Revoke agent                  " + dim("Revoke an agent credential"))
+	fmt.Printf("  %s\n", title("Sessions"))
+	fmt.Printf("    %s  %s\n", cmd(fmt.Sprintf("%-32s", "View active sessions")), dim("List all active sessions"))
+	fmt.Printf("    %s  %s\n", cmd(fmt.Sprintf("%-32s", "View sessions for user")), dim("Filter by user ID"))
+	fmt.Printf("    %s  %s\n", cmd(fmt.Sprintf("%-32s", "Revoke all sessions")), dim("Expire every active session"))
+	fmt.Printf("    %s  %s\n", cmd(fmt.Sprintf("%-32s", "Revoke sessions for user")), dim("Expire all for a user"))
+	fmt.Printf("    %s  %s\n\n", cmd(fmt.Sprintf("%-32s", "Revoke specific session")), dim("Expire by session ID"))
+
+	fmt.Printf("  %s\n", title("Events"))
+	fmt.Printf("    %s  %s\n", cmd(fmt.Sprintf("%-32s", "View recent events")), dim("Security events (last 24h)"))
+	fmt.Printf("    %s  %s\n", cmd(fmt.Sprintf("%-32s", "View events for user")), dim("Filter by user ID"))
+	fmt.Printf("    %s  %s\n", cmd(fmt.Sprintf("%-32s", "View event stats")), dim("Aggregate counts by type"))
+	fmt.Printf("    %s  %s\n\n", cmd(fmt.Sprintf("%-32s", "Tail events (live)")), dim("Stream in real time"))
+
+	fmt.Printf("  %s\n", title("Subscriptions"))
+	fmt.Printf("    %s  %s\n\n", cmd(fmt.Sprintf("%-32s", "View subscription history")), dim("Tier changes for a user"))
+
+	fmt.Printf("  %s\n", title("Nodes"))
+	fmt.Printf("    %s  %s\n", cmd(fmt.Sprintf("%-32s", "View all nodes")), dim("List all mesh nodes"))
+	fmt.Printf("    %s  %s\n\n", cmd(fmt.Sprintf("%-32s", "View nodes for user")), dim("Filter by user ID"))
+
+	fmt.Printf("  %s\n", title("Agents"))
+	fmt.Printf("    %s  %s\n", cmd(fmt.Sprintf("%-32s", "List agents")), dim("Show agent credentials"))
+	fmt.Printf("    %s  %s\n", cmd(fmt.Sprintf("%-32s", "Provision agent")), dim("Create a new credential"))
+	fmt.Printf("    %s  %s\n", cmd(fmt.Sprintf("%-32s", "Revoke agent")), dim("Revoke a credential"))
 }
 
 // Run is the entry point for "postern ctl".

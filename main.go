@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"embed"
-	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -77,19 +76,7 @@ func main() {
 }
 
 func printGlobalUsage() {
-	fmt.Println("postern - WireGuard mesh control plane")
-	fmt.Println()
-	fmt.Println("Usage:")
-	fmt.Println("  postern <command> [flags]")
-	fmt.Println()
-	fmt.Println("Commands:")
-	fmt.Println("  serve   Start the postern server (default)")
-	fmt.Println("  login   Authenticate with a postern server")
-	fmt.Println("  node    Manage mesh nodes (add, list, remove)")
-	fmt.Println("  agent   Run the WireGuard mesh agent")
-	fmt.Println("  ctl     Launch the ops control TUI")
-	fmt.Println()
-	fmt.Println("Run 'postern <command> --help' for command-specific help.")
+	cli.PrintGlobalHelp()
 }
 
 func runServe() {
