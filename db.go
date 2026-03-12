@@ -72,6 +72,25 @@ func migrate() {
 			revoked_at TEXT
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_agent_active ON agent_credential(name) WHERE revoked_at IS NULL`,
+		`CREATE TABLE IF NOT EXISTS user_peer (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			user_id INTEGER NOT NULL REFERENCES account(id),
+			label TEXT NOT NULL DEFAULT 'default',
+			endpoint TEXT NOT NULL,
+			wg_pubkey TEXT NOT NULL,
+			created_at TEXT DEFAULT (datetime('now')),
+			updated_at TEXT DEFAULT (datetime('now')),
+			UNIQUE(user_id, label)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_peer_user ON user_peer(user_id)`,
+		`CREATE TABLE IF NOT EXISTS user_subscription (
+			user_id INTEGER PRIMARY KEY REFERENCES account(id),
+			stripe_customer_id TEXT UNIQUE,
+			tier TEXT NOT NULL DEFAULT 'free' CHECK (tier IN ('free', 'pro', 'team')),
+			current_period_end TEXT,
+			created_at TEXT DEFAULT (datetime('now')),
+			updated_at TEXT DEFAULT (datetime('now'))
+		)`,
 	}
 	for _, s := range stmts {
 		if _, err := store.Exec(s); err != nil {
@@ -80,7 +99,7 @@ func migrate() {
 	}
 
 	// Record schema version (bump this number when adding migrations above)
-	const schemaVersion = 1
+	const schemaVersion = 2
 	if currentVersion < schemaVersion {
 		store.Exec("INSERT OR IGNORE INTO schema_version (version) VALUES (?)", schemaVersion)
 	}

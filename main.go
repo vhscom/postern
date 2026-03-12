@@ -17,18 +17,23 @@ var publicFS embed.FS
 
 // Config holds all runtime settings loaded from environment variables.
 type Config struct {
-	Addr             string
-	DBPath           string
-	AccessSecret     string
-	RefreshSecret    string
-	AgentSecret      string // optional: enables /ops surface
-	OpsAddr          string // optional: separate ops listener
-	GatewayURL       string // optional: enables control proxy
-	GatewayToken     string // optional: enables WS proxy token injection
-	AllowedIPs       map[string]bool
-	CookieSecure     bool
-	WSAllowedOrigins string
-	Environment      string
+	Addr                string
+	DBPath              string
+	AccessSecret        string
+	RefreshSecret       string
+	AgentSecret         string // optional: enables /ops surface
+	OpsAddr             string // optional: separate ops listener
+	GatewayURL          string // optional: enables control proxy
+	GatewayToken        string // optional: enables WS proxy token injection
+	AllowedIPs          map[string]bool
+	CookieSecure        bool
+	WSAllowedOrigins    string
+	Environment         string
+	BaseURL             string
+	StripeSecretKey     string
+	StripeWebhookSecret string
+	StripePriceProID    string
+	StripePriceTeamID   string
 }
 
 var cfg *Config
@@ -62,6 +67,20 @@ func main() {
 	// --- Account management (authenticated) ---
 	mux.Handle("POST /account/password", passwordRL(requireAuthMiddleware(http.HandlerFunc(handlePasswordChange))))
 	mux.Handle("GET /account/me", requireAuthMiddleware(http.HandlerFunc(handleMe)))
+
+	// --- Peer config (authenticated, rate-limited) ---
+	peerRL := rateLimit(rateConfig{Window: time.Minute, Max: 30, Prefix: "rl:peer", KeyFunc: userKey})
+	mux.Handle("GET /account/peers", peerRL(requireAuthMiddleware(http.HandlerFunc(handlePeerList))))
+	mux.Handle("PUT /account/peers", peerRL(requireAuthMiddleware(http.HandlerFunc(handlePeerUpsert))))
+	mux.Handle("DELETE /account/peers/{label}", peerRL(requireAuthMiddleware(http.HandlerFunc(handlePeerDelete))))
+
+	// --- Billing (authenticated, optional) ---
+	if cfg.StripeSecretKey != "" {
+		initStripe()
+		mux.Handle("POST /account/billing/checkout", requireAuthMiddleware(http.HandlerFunc(handleBillingCheckout)))
+		mux.Handle("POST /account/billing/portal", requireAuthMiddleware(http.HandlerFunc(handleBillingPortal)))
+		mux.HandleFunc("POST /webhooks/stripe", handleStripeWebhook)
+	}
 
 	// --- Ops surface (cloaked when AGENT_PROVISIONING_SECRET absent) ---
 	ops := http.NewServeMux()
@@ -143,6 +162,9 @@ func main() {
 		if cfg.GatewayURL != "" {
 			log.Printf("  control proxy → %s", cfg.GatewayURL)
 		}
+		if cfg.StripeSecretKey != "" {
+			log.Printf("  billing enabled")
+		}
 		if err := srv.ListenAndServe(); err != http.ErrServerClosed {
 			log.Fatal(err)
 		}
@@ -170,17 +192,22 @@ func main() {
 
 func loadConfig() *Config {
 	c := &Config{
-		Addr:             envOr("ADDR", ":8080"),
-		DBPath:           envOr("DB_PATH", "postern.db"),
-		AccessSecret:     mustEnv("JWT_ACCESS_SECRET"),
-		RefreshSecret:    mustEnv("JWT_REFRESH_SECRET"),
-		AgentSecret:      os.Getenv("AGENT_PROVISIONING_SECRET"),
-		OpsAddr:          os.Getenv("OPS_ADDR"),
-		GatewayURL:       os.Getenv("GATEWAY_URL"),
-		GatewayToken:     os.Getenv("GATEWAY_TOKEN"),
-		CookieSecure:     os.Getenv("ENVIRONMENT") == "production",
-		WSAllowedOrigins: os.Getenv("WS_ALLOWED_ORIGINS"),
-		Environment:      envOr("ENVIRONMENT", "development"),
+		Addr:                envOr("ADDR", ":8080"),
+		DBPath:              envOr("DB_PATH", "postern.db"),
+		AccessSecret:        mustEnv("JWT_ACCESS_SECRET"),
+		RefreshSecret:       mustEnv("JWT_REFRESH_SECRET"),
+		AgentSecret:         os.Getenv("AGENT_PROVISIONING_SECRET"),
+		OpsAddr:             os.Getenv("OPS_ADDR"),
+		GatewayURL:          os.Getenv("GATEWAY_URL"),
+		GatewayToken:        os.Getenv("GATEWAY_TOKEN"),
+		CookieSecure:        os.Getenv("ENVIRONMENT") == "production",
+		WSAllowedOrigins:    os.Getenv("WS_ALLOWED_ORIGINS"),
+		Environment:         envOr("ENVIRONMENT", "development"),
+		BaseURL:             envOr("BASE_URL", "http://localhost:8080"),
+		StripeSecretKey:     os.Getenv("STRIPE_SECRET_KEY"),
+		StripeWebhookSecret: os.Getenv("STRIPE_WEBHOOK_SECRET"),
+		StripePriceProID:    os.Getenv("STRIPE_PRICE_PRO_ID"),
+		StripePriceTeamID:   os.Getenv("STRIPE_PRICE_TEAM_ID"),
 	}
 	if c.GatewayURL != "" && !isSafeURL(c.GatewayURL) {
 		log.Fatal("GATEWAY_URL blocked by SSRF check")

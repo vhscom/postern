@@ -4,8 +4,8 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Auth Demo — Private Landing</title>
-    <meta name="description" content="Edge authentication reference implementation built on Cloudflare Workers, Hono, and Turso.">
+    <title>Auth Demo — Postern</title>
+    <meta name="description" content="Single-binary auth server with edge config management, adaptive PoW, and an optional control proxy.">
     <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
     <meta name="theme-color" content="#050a10" media="(prefers-color-scheme: dark)">
     <meta name="theme-color" content="#f5f7fa" media="(prefers-color-scheme: light)">
@@ -358,7 +358,7 @@
     <div class="wizard">
         <header class="wizard-header">
             <div class="title-row">
-                <h1>Private Landing</h1>
+                <h1>Postern</h1>
                 <span class="auth-status unauthenticated" aria-live="polite">-- unauthenticated</span>
             </div>
             <nav class="tab-bar" role="tablist" aria-label="Authentication steps"></nav>
@@ -372,7 +372,7 @@
 <!-- ============================================ -->
 
 <main>
-<h1 class="no-js-title">Private Landing</h1>
+<h1 class="no-js-title">Postern</h1>
 
 <p id="registered" class="status-msg success">Account created successfully. Log in below.</p>
 <p id="logged-in" class="status-msg success">Logged in successfully.</p>
@@ -435,6 +435,41 @@
                 <input type="password" name="newPassword" autocomplete="new-password" required>
             </label>
             <button type="submit">Change Password</button>
+        </form>
+    </auth-step>
+
+    <auth-step label="Peers" method="GET" path="/account/peers">
+        <p class="step-description">
+            View your peer configurations and tier status. Each peer is a WireGuard
+            endpoint you control. Free tier allows 1 peer; upgrade for more.
+        </p>
+        <button type="button" data-action="probe">Load Peers</button>
+    </auth-step>
+
+    <auth-step label="Save Peer" method="PUT" path="/account/peers">
+        <p class="step-description">
+            Save a peer configuration. If the label matches an existing peer, its
+            endpoint and public key will be updated. Labels are alphanumeric with
+            hyphens, max 32 characters.
+        </p>
+        <form>
+            <label>
+                Label:
+                <input type="text" name="label" placeholder="home" pattern="[a-zA-Z0-9\-]{1,32}" autocomplete="off" required>
+            </label>
+            <label>
+                Endpoint:
+                <input type="text" name="endpoint" placeholder="home.example.com:51820" autocomplete="off" required>
+            </label>
+            <label>
+                WireGuard Public Key:
+                <input type="text" name="wg_pubkey" placeholder="xTIBA5rboUvnH4hto..." autocomplete="off" required>
+            </label>
+            <label class="confirm-overwrite" hidden style="flex-direction:row;align-items:center;gap:.5rem">
+                <input type="checkbox" name="confirm" value="true" style="min-height:auto;width:auto;padding:0">
+                Overwrite existing peer
+            </label>
+            <button type="submit">Save Edge</button>
         </form>
     </auth-step>
 
@@ -632,6 +667,8 @@
                 e.preventDefault();
                 const form = e.target;
                 const data = Object.fromEntries(new FormData(form).entries());
+                if (data.confirm === 'true') data.confirm = true;
+                else delete data.confirm;
                 apiConsole.execute(Object.keys(data).length > 0 ? data : undefined);
             });
 
@@ -642,11 +679,23 @@
                 }
             });
 
-            /* Reset form on successful response */
+            /* Handle 409 PEER_EXISTS — reveal confirm checkbox */
             apiConsole.addEventListener('api-response', (e) => {
+                const { status, body: data } = e.detail;
+                const confirmLabel = this.querySelector('.confirm-overwrite');
+                if (status === 409 && data?.code === 'PEER_EXISTS' && confirmLabel) {
+                    confirmLabel.hidden = false;
+                    return;
+                }
+
+                /* Reset form and hide confirm on success */
                 if (e.detail.ok) {
                     const form = this.querySelector('form');
                     if (form) form.reset();
+                    if (confirmLabel) {
+                        confirmLabel.hidden = true;
+                        confirmLabel.querySelector('input').checked = false;
+                    }
                 }
             });
         }
