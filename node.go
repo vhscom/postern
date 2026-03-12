@@ -174,12 +174,26 @@ func handleNodeCreate(w http.ResponseWriter, r *http.Request) {
 	// New node joins the mesh — notify all connected nodes
 	go notifyNodeSync(claims.UID)
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(map[string]any{
+	resp := map[string]any{
 		"label":   body.Label,
 		"api_key": apiKey,
-	})
+	}
+	if cfg.OpsAddr != "" {
+		host := r.Host
+		if i := strings.LastIndex(host, ":"); i != -1 {
+			host = host[:i]
+		}
+		scheme := "http"
+		if r.TLS != nil {
+			scheme = "https"
+		}
+		port := strings.TrimPrefix(cfg.OpsAddr, ":")
+		resp["ops_url"] = fmt.Sprintf("%s://%s:%s", scheme, host, port)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(resp)
 }
 
 // PUT /account/nodes/{label}
@@ -287,8 +301,8 @@ func handleNodeDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	store.Exec("UPDATE agent_credential SET revoked_at = datetime('now') WHERE id = ?", credID)
 	store.Exec("DELETE FROM user_node WHERE id = ?", nodeID)
+	store.Exec("DELETE FROM agent_credential WHERE id = ?", credID)
 
 	emitEvent("node.deleted", clientIP(r), claims.UID, r.UserAgent(), http.StatusOK,
 		map[string]any{"label": label})

@@ -149,9 +149,15 @@ func runNodeAdd() {
 
 	apiKey, _ := result["api_key"].(string)
 
+	// Use ops URL if server reports a split ops surface
+	agentServer := sess.Server
+	if opsURL, ok := result["ops_url"].(string); ok && opsURL != "" {
+		agentServer = opsURL
+	}
+
 	// Write agent config
 	agentCfg := map[string]string{
-		"server":    sess.Server,
+		"server":    agentServer,
 		"token":     apiKey,
 		"interface": iface,
 	}
