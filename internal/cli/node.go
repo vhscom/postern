@@ -27,6 +27,9 @@ func RunNode() {
 		runNodeAdd()
 	case "list", "ls":
 		runNodeList()
+	case "update", "set":
+		os.Args = os.Args[1:]
+		runNodeUpdate()
 	case "remove", "rm":
 		os.Args = os.Args[1:]
 		runNodeRemove()
@@ -44,6 +47,7 @@ func printNodeUsage() {
 	printHeading("Usage")
 	printCmd("postern node add [flags]", "Add this machine to the mesh")
 	printCmd("postern node list", "List all nodes in your mesh")
+	printCmd("postern node update <label> [flags]", "Update a node's config")
 	printCmd("postern node remove <label>", "Remove a node from the mesh")
 	fmt.Println()
 	printHeading("Flags (add)")
@@ -174,6 +178,74 @@ func runNodeAdd() {
 	fmt.Println()
 	fmt.Println("Start the agent:")
 	fmt.Printf("  postern agent\n")
+}
+
+func runNodeUpdate() {
+	if len(os.Args) < 2 {
+		fmt.Fprintln(os.Stderr, "Usage: postern node update <label> [flags]")
+		fmt.Fprintln(os.Stderr, "Flags: --endpoint, --ip, --port, --interface")
+		os.Exit(1)
+	}
+
+	label := os.Args[1]
+	if label == "--help" || label == "-h" {
+		fmt.Fprintln(os.Stderr, "Usage: postern node update <label> [flags]")
+		fmt.Fprintln(os.Stderr, "Flags: --endpoint, --ip, --port, --interface")
+		return
+	}
+
+	fields := map[string]any{}
+	for i := 2; i < len(os.Args); i++ {
+		switch {
+		case os.Args[i] == "--endpoint" && i+1 < len(os.Args):
+			i++
+			fields["wg_endpoint"] = os.Args[i]
+		case os.Args[i] == "--ip" && i+1 < len(os.Args):
+			i++
+			fields["allowed_ips"] = os.Args[i]
+		case os.Args[i] == "--port" && i+1 < len(os.Args):
+			i++
+			fields["wg_listen_port"] = json.Number(os.Args[i])
+		case os.Args[i] == "--interface" && i+1 < len(os.Args):
+			i++
+			fields["interface_name"] = os.Args[i]
+		}
+	}
+
+	if len(fields) == 0 {
+		fmt.Fprintln(os.Stderr, "Error: no fields to update")
+		fmt.Fprintln(os.Stderr, "Flags: --endpoint, --ip, --port, --interface")
+		os.Exit(1)
+	}
+
+	data, _ := json.Marshal(fields)
+	req, _, err := authedRequest("PUT", "/account/nodes/"+label, strings.NewReader(string(data)))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		var result map[string]any
+		json.Unmarshal(body, &result)
+		msg := "update failed"
+		if e, ok := result["error"].(string); ok {
+			msg = e
+		}
+		fmt.Fprintf(os.Stderr, "Error: %s\n", msg)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Node '%s' updated.\n", label)
 }
 
 func runNodeList() {

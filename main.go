@@ -124,6 +124,7 @@ func runServe() {
 	nodeRL := rateLimit(rateConfig{Window: time.Minute, Max: 30, Prefix: "rl:node", KeyFunc: userKey})
 	mux.Handle("GET /account/nodes", nodeRL(requireAuthMiddleware(http.HandlerFunc(handleNodeList))))
 	mux.Handle("POST /account/nodes", nodeRL(requireAuthMiddleware(http.HandlerFunc(handleNodeCreate))))
+	mux.Handle("PUT /account/nodes/{label}", nodeRL(requireAuthMiddleware(http.HandlerFunc(handleNodeUpdate))))
 	mux.Handle("DELETE /account/nodes/{label}", nodeRL(requireAuthMiddleware(http.HandlerFunc(handleNodeDelete))))
 
 	// --- Billing (authenticated, optional) ---

@@ -182,6 +182,92 @@ func handleNodeCreate(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// PUT /account/nodes/{label}
+func handleNodeUpdate(w http.ResponseWriter, r *http.Request) {
+	claims := getClaims(r)
+	label := r.PathValue("label")
+	if label == "" {
+		respondError(w, r, http.StatusBadRequest, "VALIDATION_ERROR", "Label required")
+		return
+	}
+
+	var nodeID int
+	err := store.QueryRow(
+		"SELECT id FROM user_node WHERE user_id = ? AND label = ?",
+		claims.UID, label,
+	).Scan(&nodeID)
+	if err != nil {
+		respondError(w, r, http.StatusNotFound, "NOT_FOUND", "Node not found")
+		return
+	}
+
+	var body struct {
+		WGEndpoint *string `json:"wg_endpoint"`
+		ListenPort *int    `json:"wg_listen_port"`
+		AllowedIPs *string `json:"allowed_ips"`
+		Keepalive  *int    `json:"persistent_keepalive"`
+		Interface  *string `json:"interface_name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		respondError(w, r, http.StatusBadRequest, "VALIDATION_ERROR", "Invalid request body")
+		return
+	}
+
+	// Build dynamic update
+	sets := []string{"updated_at = datetime('now')"}
+	args := []any{}
+
+	if body.WGEndpoint != nil {
+		sets = append(sets, "wg_endpoint = ?")
+		v := strings.TrimSpace(*body.WGEndpoint)
+		if v == "" {
+			args = append(args, nil)
+		} else {
+			args = append(args, v)
+		}
+	}
+	if body.ListenPort != nil {
+		sets = append(sets, "wg_listen_port = ?")
+		args = append(args, *body.ListenPort)
+	}
+	if body.AllowedIPs != nil {
+		v := strings.TrimSpace(*body.AllowedIPs)
+		if v == "" {
+			respondError(w, r, http.StatusBadRequest, "VALIDATION_ERROR", "allowed_ips cannot be empty")
+			return
+		}
+		sets = append(sets, "allowed_ips = ?")
+		args = append(args, v)
+	}
+	if body.Keepalive != nil {
+		sets = append(sets, "persistent_keepalive = ?")
+		args = append(args, *body.Keepalive)
+	}
+	if body.Interface != nil {
+		sets = append(sets, "interface_name = ?")
+		args = append(args, strings.TrimSpace(*body.Interface))
+	}
+
+	if len(args) == 0 {
+		respondError(w, r, http.StatusBadRequest, "VALIDATION_ERROR", "No fields to update")
+		return
+	}
+
+	args = append(args, nodeID)
+	query := fmt.Sprintf("UPDATE user_node SET %s WHERE id = ?", strings.Join(sets, ", "))
+	if _, err := store.Exec(query, args...); err != nil {
+		respondError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to update node")
+		return
+	}
+
+	emitEvent("node.updated", clientIP(r), claims.UID, r.UserAgent(), http.StatusOK,
+		map[string]any{"label": label})
+
+	go notifyNodeSync(claims.UID)
+
+	jsonOK(w, map[string]any{"ok": true, "label": label})
+}
+
 // DELETE /account/nodes/{label}
 func handleNodeDelete(w http.ResponseWriter, r *http.Request) {
 	claims := getClaims(r)
