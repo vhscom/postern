@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"crypto/subtle"
 	"log"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -161,6 +163,13 @@ type statusRecorder struct {
 func (r *statusRecorder) WriteHeader(code int) {
 	r.status = code
 	r.ResponseWriter.WriteHeader(code)
+}
+
+func (r *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	if h, ok := r.ResponseWriter.(http.Hijacker); ok {
+		return h.Hijack()
+	}
+	return nil, nil, http.ErrNotSupported
 }
 
 func accessLog(next http.Handler) http.Handler {
