@@ -74,6 +74,12 @@ func main() {
 	mux.Handle("PUT /account/peers", peerRL(requireAuthMiddleware(http.HandlerFunc(handlePeerUpsert))))
 	mux.Handle("DELETE /account/peers/{label}", peerRL(requireAuthMiddleware(http.HandlerFunc(handlePeerDelete))))
 
+	// --- Node management (authenticated, rate-limited) ---
+	nodeRL := rateLimit(rateConfig{Window: time.Minute, Max: 30, Prefix: "rl:node", KeyFunc: userKey})
+	mux.Handle("GET /account/nodes", nodeRL(requireAuthMiddleware(http.HandlerFunc(handleNodeList))))
+	mux.Handle("POST /account/nodes", nodeRL(requireAuthMiddleware(http.HandlerFunc(handleNodeCreate))))
+	mux.Handle("DELETE /account/nodes/{label}", nodeRL(requireAuthMiddleware(http.HandlerFunc(handleNodeDelete))))
+
 	// --- Billing (authenticated, optional) ---
 	if cfg.StripeSecretKey != "" {
 		initStripe()

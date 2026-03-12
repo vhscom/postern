@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"strings"
 	"sync"
@@ -71,8 +72,8 @@ func (c *wsConn) safeWriteControl(messageType int, data []byte, deadline time.Ti
 
 // Allowed capabilities by trust level
 var capsByTrust = map[string]map[string]bool{
-	"read":  {"query_events": true, "query_sessions": true, "subscribe_events": true},
-	"write": {"query_events": true, "query_sessions": true, "subscribe_events": true, "revoke_session": true},
+	"read":  {"query_events": true, "query_sessions": true, "subscribe_events": true, "wg_sync": true, "wg_status": true},
+	"write": {"query_events": true, "query_sessions": true, "subscribe_events": true, "revoke_session": true, "wg_sync": true, "wg_status": true},
 }
 
 func handleOpsWS(w http.ResponseWriter, r *http.Request) {
@@ -101,6 +102,20 @@ func handleOpsWS(w http.ResponseWriter, r *http.Request) {
 	granted := negotiateCapabilities(conn, agent, connID)
 	if granted == nil {
 		return
+	}
+
+	// Register as node agent if applicable
+	if granted["wg_sync"] || granted["wg_status"] {
+		nID, uID := lookupNodeForAgent(agent.ID)
+		if nID > 0 {
+			registerNode(&connectedNode{
+				conn: conn, agentID: agent.ID, userID: uID, nodeID: nID,
+			})
+			defer unregisterNode(nID)
+
+			// Send full sync on connect
+			go notifyNodeSync(uID)
+		}
 	}
 
 	// Start heartbeat
@@ -284,6 +299,24 @@ func handleAgentMessage(conn *wsConn, agent *AgentPrincipal, granted map[string]
 
 	case "unsubscribe_events":
 		handleWSUnsubscribeEvents(conn, msg.ID, subs)
+
+	case "wg.status":
+		if !granted["wg_status"] {
+			sendWSError(conn, msg.ID, "NOT_GRANTED", "Capability not granted")
+			return
+		}
+		handleWGStatus(agent, msg.Payload)
+
+	case "wg.sync.result":
+		// Acknowledgement from node agent — log only
+		var p struct {
+			Success bool   `json:"success"`
+			Error   string `json:"error"`
+		}
+		json.Unmarshal(msg.Payload, &p)
+		if !p.Success {
+			log.Printf("wg.sync.result: agent=%s error=%s", agent.Name, p.Error)
+		}
 
 	default:
 		sendWSError(conn, msg.ID, "UNKNOWN_TYPE", "Unknown message type: "+msg.Type)

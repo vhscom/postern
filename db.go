@@ -107,8 +107,40 @@ func migrate() {
 		}
 	}
 
+	// v3: Node management for WireGuard control plane
+	if currentVersion < 3 {
+		v3 := []string{
+			`ALTER TABLE agent_credential ADD COLUMN user_id INTEGER REFERENCES account(id)`,
+			`ALTER TABLE user_peer ADD COLUMN allowed_ips TEXT NOT NULL DEFAULT '10.0.0.0/24'`,
+			`ALTER TABLE user_peer ADD COLUMN persistent_keepalive INTEGER NOT NULL DEFAULT 0`,
+			`ALTER TABLE user_peer ADD COLUMN version INTEGER NOT NULL DEFAULT 1`,
+			`CREATE TABLE IF NOT EXISTS user_node (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				user_id INTEGER NOT NULL REFERENCES account(id),
+				label TEXT NOT NULL,
+				wg_pubkey TEXT NOT NULL,
+				wg_endpoint TEXT,
+				wg_listen_port INTEGER NOT NULL DEFAULT 51820,
+				interface_name TEXT NOT NULL DEFAULT 'wg0',
+				agent_credential_id INTEGER REFERENCES agent_credential(id),
+				last_seen_at TEXT,
+				last_status TEXT,
+				created_at TEXT DEFAULT (datetime('now')),
+				updated_at TEXT DEFAULT (datetime('now')),
+				UNIQUE(user_id, label)
+			)`,
+			`CREATE INDEX IF NOT EXISTS idx_node_user ON user_node(user_id)`,
+			`CREATE INDEX IF NOT EXISTS idx_node_agent ON user_node(agent_credential_id)`,
+		}
+		for _, s := range v3 {
+			if _, err := store.Exec(s); err != nil {
+				log.Fatalf("migrate v3: %v\n%s", err, s)
+			}
+		}
+	}
+
 	// Record schema version (bump this number when adding migrations above)
-	const schemaVersion = 2
+	const schemaVersion = 3
 	if currentVersion < schemaVersion {
 		store.Exec("INSERT OR IGNORE INTO schema_version (version) VALUES (?)", schemaVersion)
 	}
