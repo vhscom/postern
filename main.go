@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"postern/internal/agent"
+	"postern/internal/cli"
 	"postern/internal/ctl"
 )
 
@@ -57,6 +58,14 @@ func main() {
 			os.Args = os.Args[1:]
 			ctl.Run()
 			return
+		case "login":
+			os.Args = os.Args[1:]
+			cli.RunLogin()
+			return
+		case "node":
+			os.Args = os.Args[1:]
+			cli.RunNode()
+			return
 		case "--help", "-h", "help":
 			printGlobalUsage()
 			return
@@ -75,6 +84,8 @@ func printGlobalUsage() {
 	fmt.Println()
 	fmt.Println("Commands:")
 	fmt.Println("  serve   Start the postern server (default)")
+	fmt.Println("  login   Authenticate with a postern server")
+	fmt.Println("  node    Manage mesh nodes (add, list, remove)")
 	fmt.Println("  agent   Run the WireGuard mesh agent")
 	fmt.Println("  ctl     Launch the ops control TUI")
 	fmt.Println()
