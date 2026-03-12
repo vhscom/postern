@@ -290,7 +290,11 @@ func handleNodeDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	store.Exec("DELETE FROM user_node WHERE id = ?", nodeID)
+	store.Exec("UPDATE invite_token SET used_by_node_id = NULL WHERE used_by_node_id = ?", nodeID)
+	if _, err = store.Exec("DELETE FROM user_node WHERE id = ?", nodeID); err != nil {
+		respondError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to delete node")
+		return
+	}
 	store.Exec("DELETE FROM agent_credential WHERE id = ?", credID)
 
 	emitEvent("node.deleted", clientIP(r), claims.UID, r.UserAgent(), http.StatusOK,
