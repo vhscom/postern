@@ -28,7 +28,7 @@ const (
 )
 
 var (
-	activeBridge   *websocket.Conn
+	activeBridge   *wsConn
 	activeBridgeMu sync.Mutex
 	bridgeUpgrader = websocket.Upgrader{
 		CheckOrigin: checkWSOrigin,
@@ -42,10 +42,11 @@ func newBridge() http.Handler {
 			return
 		}
 
-		client, err := bridgeUpgrader.Upgrade(w, r, nil)
+		raw, err := bridgeUpgrader.Upgrade(w, r, nil)
 		if err != nil {
 			return
 		}
+		client := &wsConn{Conn: raw}
 		client.SetReadLimit(maxMessageSize)
 
 		claims := getClaims(r)
@@ -117,8 +118,11 @@ func newBridge() http.Handler {
 				if err != nil {
 					return
 				}
-				client.SetWriteDeadline(time.Now().Add(writeWait))
-				if err := client.WriteMessage(mt, msg); err != nil {
+				client.wmu.Lock()
+				client.Conn.SetWriteDeadline(time.Now().Add(writeWait))
+				werr := client.Conn.WriteMessage(mt, msg)
+				client.wmu.Unlock()
+				if werr != nil {
 					return
 				}
 			}
@@ -190,8 +194,8 @@ func toWS(u string) string {
 	return strings.NewReplacer("https://", "wss://", "http://", "ws://").Replace(u)
 }
 
-func closeBridgeWS(c *websocket.Conn, code int, reason string) {
+func closeBridgeWS(c *wsConn, code int, reason string) {
 	msg := websocket.FormatCloseMessage(code, reason)
-	c.WriteControl(websocket.CloseMessage, msg, time.Now().Add(time.Second))
+	c.safeWriteControl(websocket.CloseMessage, msg, time.Now().Add(time.Second))
 	c.Close()
 }
