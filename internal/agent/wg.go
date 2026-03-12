@@ -1,4 +1,4 @@
-package main
+package agent
 
 import (
 	"fmt"
@@ -7,8 +7,8 @@ import (
 	"strings"
 )
 
-// PeerConfig is the desired state for a single WireGuard peer.
-type PeerConfig struct {
+// peerConfig is the desired state for a single WireGuard peer.
+type peerConfig struct {
 	Label               string `json:"label,omitempty"`
 	PublicKey           string `json:"public_key"`
 	Endpoint            string `json:"endpoint,omitempty"`
@@ -16,16 +16,16 @@ type PeerConfig struct {
 	PersistentKeepalive int    `json:"persistent_keepalive,omitempty"`
 }
 
-// InterfaceStatus is the current state of a WireGuard interface.
-type InterfaceStatus struct {
+// interfaceStatus is the current state of a WireGuard interface.
+type interfaceStatus struct {
 	Interface  string       `json:"interface"`
 	PublicKey  string       `json:"public_key"`
 	ListenPort int          `json:"listen_port"`
-	Peers      []PeerStatus `json:"peers"`
+	Peers      []peerStatus `json:"peers"`
 }
 
-// PeerStatus is the live state of a single WireGuard peer.
-type PeerStatus struct {
+// peerStatus is the live state of a single WireGuard peer.
+type peerStatus struct {
 	PublicKey           string `json:"public_key"`
 	Endpoint            string `json:"endpoint,omitempty"`
 	AllowedIPs          string `json:"allowed_ips,omitempty"`
@@ -36,7 +36,7 @@ type PeerStatus struct {
 }
 
 // wgShow parses "wg show <iface> dump" into structured data.
-func wgShow(iface string) (*InterfaceStatus, error) {
+func wgShow(iface string) (*interfaceStatus, error) {
 	out, err := exec.Command("wg", "show", iface, "dump").Output()
 	if err != nil {
 		return nil, fmt.Errorf("wg show %s dump: %w", iface, err)
@@ -54,7 +54,7 @@ func wgShow(iface string) (*InterfaceStatus, error) {
 	}
 
 	port, _ := strconv.Atoi(ifields[2])
-	status := &InterfaceStatus{
+	status := &interfaceStatus{
 		Interface:  iface,
 		PublicKey:  ifields[1],
 		ListenPort: port,
@@ -71,7 +71,7 @@ func wgShow(iface string) (*InterfaceStatus, error) {
 		tx, _ := strconv.ParseInt(fields[6], 10, 64)
 		keepalive, _ := strconv.Atoi(fields[7])
 
-		status.Peers = append(status.Peers, PeerStatus{
+		status.Peers = append(status.Peers, peerStatus{
 			PublicKey:           fields[0],
 			Endpoint:            fields[2],
 			AllowedIPs:          fields[3],
@@ -86,7 +86,7 @@ func wgShow(iface string) (*InterfaceStatus, error) {
 }
 
 // wgSetPeer adds or updates a single peer.
-func wgSetPeer(iface string, peer PeerConfig) error {
+func wgSetPeer(iface string, peer peerConfig) error {
 	args := []string{"set", iface, "peer", peer.PublicKey}
 	if peer.Endpoint != "" {
 		args = append(args, "endpoint", peer.Endpoint)
@@ -115,7 +115,7 @@ func wgRemovePeer(iface, pubkey string) error {
 }
 
 // wgSyncFull ensures the interface has exactly the desired set of peers.
-func wgSyncFull(iface string, desired []PeerConfig) error {
+func wgSyncFull(iface string, desired []peerConfig) error {
 	current, err := wgShow(iface)
 	if err != nil {
 		// Interface might not exist yet or wg not available; try setting peers directly
@@ -128,7 +128,7 @@ func wgSyncFull(iface string, desired []PeerConfig) error {
 	}
 
 	// Build desired set keyed by public key
-	want := map[string]PeerConfig{}
+	want := map[string]peerConfig{}
 	for _, p := range desired {
 		want[p.PublicKey] = p
 	}

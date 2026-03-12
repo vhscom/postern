@@ -1,4 +1,4 @@
-package main
+package agent
 
 import (
 	"context"
@@ -14,20 +14,37 @@ import (
 	"github.com/coder/websocket"
 )
 
-type Config struct {
+type config struct {
 	Server    string `json:"server"`
 	Token     string `json:"token"`
 	Interface string `json:"interface"`
 }
 
-func main() {
-	if len(os.Args) > 1 && os.Args[1] == "init" {
-		runInit()
-		return
+// Run is the entry point for "postern agent".
+func Run() {
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "init":
+			runInit()
+			return
+		case "--help", "-h", "help":
+			fmt.Println("postern agent - WireGuard mesh agent")
+			fmt.Println()
+			fmt.Println("Usage:")
+			fmt.Println("  postern agent              Connect to server and sync WireGuard config")
+			fmt.Println("  postern agent init <server-url> <api-key> [interface]")
+			fmt.Println()
+			fmt.Println("Environment:")
+			fmt.Println("  POSTERN_AGENT_SERVER       Server URL (overrides config file)")
+			fmt.Println("  POSTERN_AGENT_TOKEN        API key (overrides config file)")
+			fmt.Println("  POSTERN_AGENT_INTERFACE    WireGuard interface (default: wg0)")
+			fmt.Println("  POSTERN_AGENT_CONFIG_DIR   Config directory (default: ~/.config/postern)")
+			return
+		}
 	}
 
 	cfg := loadConfig()
-	log.Printf("postern-agent: server=%s interface=%s", cfg.Server, cfg.Interface)
+	log.Printf("postern agent: server=%s interface=%s", cfg.Server, cfg.Interface)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -37,8 +54,8 @@ func main() {
 
 func runInit() {
 	if len(os.Args) < 4 {
-		fmt.Fprintf(os.Stderr, "Usage: postern-agent init <server-url> <api-key> [interface]\n")
-		fmt.Fprintf(os.Stderr, "Example: postern-agent init https://postern.example.com abc123 wg0\n")
+		fmt.Fprintf(os.Stderr, "Usage: postern agent init <server-url> <api-key> [interface]\n")
+		fmt.Fprintf(os.Stderr, "Example: postern agent init https://postern.example.com abc123 wg0\n")
 		os.Exit(1)
 	}
 
@@ -47,7 +64,7 @@ func runInit() {
 		iface = os.Args[4]
 	}
 
-	cfg := Config{
+	cfg := config{
 		Server:    os.Args[2],
 		Token:     os.Args[3],
 		Interface: iface,
@@ -64,7 +81,7 @@ func runInit() {
 		log.Fatalf("Failed to write config: %v", err)
 	}
 	fmt.Printf("Config written to %s\n", path)
-	fmt.Printf("Run 'postern-agent' to connect.\n")
+	fmt.Printf("Run 'postern agent' to connect.\n")
 }
 
 func configDir() string {
@@ -72,10 +89,10 @@ func configDir() string {
 		return d
 	}
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".config", "postern-agent")
+	return filepath.Join(home, ".config", "postern")
 }
 
-func loadConfig() *Config {
+func loadConfig() *config {
 	// CLI env overrides
 	server := os.Getenv("POSTERN_AGENT_SERVER")
 	token := os.Getenv("POSTERN_AGENT_TOKEN")
@@ -85,17 +102,17 @@ func loadConfig() *Config {
 		if iface == "" {
 			iface = "wg0"
 		}
-		return &Config{Server: server, Token: token, Interface: iface}
+		return &config{Server: server, Token: token, Interface: iface}
 	}
 
 	// Config file
 	path := filepath.Join(configDir(), "config.json")
 	data, err := os.ReadFile(path)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "No config found. Run 'postern-agent init <server> <key>' first.\n")
+		fmt.Fprintf(os.Stderr, "No config found. Run 'postern agent init <server> <key>' first.\n")
 		os.Exit(1)
 	}
-	var cfg Config
+	var cfg config
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		log.Fatalf("Invalid config: %v", err)
 	}
@@ -105,7 +122,7 @@ func loadConfig() *Config {
 	return &cfg
 }
 
-func connectLoop(ctx context.Context, cfg *Config) {
+func connectLoop(ctx context.Context, cfg *config) {
 	backoff := time.Second
 
 	for {
@@ -133,7 +150,7 @@ func connectLoop(ctx context.Context, cfg *Config) {
 	}
 }
 
-func runSession(ctx context.Context, cfg *Config) error {
+func runSession(ctx context.Context, cfg *config) error {
 	wsURL := cfg.Server + "/ops/ws"
 	conn, _, err := websocket.Dial(ctx, wsURL, &websocket.DialOptions{
 		HTTPHeader: map[string][]string{
@@ -229,7 +246,7 @@ func runSession(ctx context.Context, cfg *Config) error {
 	}
 }
 
-func sendStatus(ctx context.Context, conn *websocket.Conn, status *InterfaceStatus) {
+func sendStatus(ctx context.Context, conn *websocket.Conn, status *interfaceStatus) {
 	msg := map[string]any{
 		"type":    "wg.status",
 		"payload": status,
@@ -262,8 +279,8 @@ func handleMessage(ctx context.Context, conn *websocket.Conn, iface string, raw 
 func handleSync(ctx context.Context, conn *websocket.Conn, iface, msgID string, payload json.RawMessage) error {
 	var p struct {
 		Action string       `json:"action"`
-		Peers  []PeerConfig `json:"peers"`
-		Peer   *PeerConfig  `json:"peer"`
+		Peers  []peerConfig `json:"peers"`
+		Peer   *peerConfig  `json:"peer"`
 		Pubkey string       `json:"public_key"`
 	}
 	if err := json.Unmarshal(payload, &p); err != nil {

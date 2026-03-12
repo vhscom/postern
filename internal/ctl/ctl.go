@@ -1,4 +1,4 @@
-package main
+package ctl
 
 import (
 	"context"
@@ -1571,10 +1571,10 @@ func printUsage() {
 	label := ui.PromptStyle.Render
 	dim := ui.DimStyle.Render
 
-	fmt.Println(heading("posternctl") + dim(" - postern ops control"))
+	fmt.Println(heading("postern ctl") + dim(" - postern ops control"))
 	fmt.Println()
 	fmt.Println(heading("Usage:"))
-	fmt.Println("  posternctl [flags]")
+	fmt.Println("  postern ctl [flags]")
 	fmt.Println()
 	fmt.Println("  Launches an interactive TUI for managing postern operations.")
 	fmt.Println()
@@ -1615,7 +1615,8 @@ func printUsage() {
 	fmt.Println("    Revoke agent                  " + dim("Revoke an agent credential"))
 }
 
-func main() {
+// Run is the entry point for "postern ctl".
+func Run() {
 	var addr string
 	var help bool
 	for i := 1; i < len(os.Args); i++ {
@@ -1644,7 +1645,7 @@ func main() {
 
 	if apiURL == "" || apiKey == "" {
 		fmt.Fprintln(os.Stderr, "POSTERNCTL_ADDR and POSTERNCTL_API_KEY environment variables are required")
-		fmt.Fprintln(os.Stderr, "Run 'posternctl --help' for usage information")
+		fmt.Fprintln(os.Stderr, "Run 'postern ctl --help' for usage information")
 		os.Exit(1)
 	}
 

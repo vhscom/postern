@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"embed"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -10,6 +11,9 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"postern/internal/agent"
+	"postern/internal/ctl"
 )
 
 //go:embed public
@@ -39,6 +43,45 @@ type Config struct {
 var cfg *Config
 
 func main() {
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "serve":
+			os.Args = os.Args[1:]
+			runServe()
+			return
+		case "agent":
+			os.Args = os.Args[1:]
+			agent.Run()
+			return
+		case "ctl":
+			os.Args = os.Args[1:]
+			ctl.Run()
+			return
+		case "--help", "-h", "help":
+			printGlobalUsage()
+			return
+		}
+	}
+
+	// Default: run server (backwards compatible)
+	runServe()
+}
+
+func printGlobalUsage() {
+	fmt.Println("postern - WireGuard mesh control plane")
+	fmt.Println()
+	fmt.Println("Usage:")
+	fmt.Println("  postern <command> [flags]")
+	fmt.Println()
+	fmt.Println("Commands:")
+	fmt.Println("  serve   Start the postern server (default)")
+	fmt.Println("  agent   Run the WireGuard mesh agent")
+	fmt.Println("  ctl     Launch the ops control TUI")
+	fmt.Println()
+	fmt.Println("Run 'postern <command> --help' for command-specific help.")
+}
+
+func runServe() {
 	cfg = loadConfig()
 	initDB(cfg.DBPath)
 

@@ -1,6 +1,4 @@
 postern
-/posternctl
-openproxy
 *.db
 *.db-shm
 *.db-wal
