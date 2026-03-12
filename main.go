@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"embed"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -41,6 +42,7 @@ type Config struct {
 }
 
 var cfg *Config
+var version = "dev"
 
 func main() {
 	if len(os.Args) > 1 {
@@ -64,6 +66,9 @@ func main() {
 		case "node":
 			os.Args = os.Args[1:]
 			cli.RunNode()
+			return
+		case "--version", "-v", "version":
+			fmt.Println("postern " + version)
 			return
 		case "--help", "-h", "help":
 			printGlobalUsage()
