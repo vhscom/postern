@@ -27,12 +27,20 @@ func Run() {
 		case "init":
 			runInit()
 			return
+		case "install":
+			runInstall()
+			return
+		case "uninstall":
+			runUninstall()
+			return
 		case "--help", "-h", "help":
 			fmt.Println("postern agent - WireGuard mesh agent")
 			fmt.Println()
 			fmt.Println("Usage:")
 			fmt.Println("  postern agent              Connect to server and sync WireGuard config")
 			fmt.Println("  postern agent init <server-url> <api-key> [interface]")
+			fmt.Println("  postern agent install      Install as system service (launchd/systemd)")
+			fmt.Println("  postern agent uninstall    Remove system service")
 			fmt.Println()
 			fmt.Println("Environment:")
 			fmt.Println("  POSTERN_AGENT_SERVER       Server URL (overrides config file)")
