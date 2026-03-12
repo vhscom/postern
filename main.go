@@ -102,6 +102,7 @@ func main() {
 	ops.Handle("GET /ops/events", requireAgentKey(http.HandlerFunc(handleOpsEvents)))
 	ops.Handle("GET /ops/events/stats", requireAgentKey(http.HandlerFunc(handleOpsEventStats)))
 	ops.Handle("GET /ops/subscriptions/{user_id}/history", requireAgentKey(http.HandlerFunc(handleOpsSubscriptionHistory)))
+	ops.Handle("GET /ops/nodes", requireAgentKey(http.HandlerFunc(handleOpsNodeList)))
 
 	// WebSocket multiplexer: Bearer → agent WS, Cookie → bridge proxy
 	ops.HandleFunc("GET /ops/ws", func(w http.ResponseWriter, r *http.Request) {

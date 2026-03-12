@@ -139,6 +139,25 @@ type SubscriptionHistoryResponse struct {
 	History []SubscriptionHistoryEntry `json:"history"`
 }
 
+// --- Nodes ---
+
+// Node represents a WireGuard mesh node.
+type Node struct {
+	ID         int     `json:"id"`
+	UserID     int     `json:"user_id"`
+	Label      string  `json:"label"`
+	WGPubkey   string  `json:"wg_pubkey"`
+	WGEndpoint *string `json:"wg_endpoint,omitempty"`
+	AllowedIPs string  `json:"allowed_ips"`
+	LastSeenAt *string `json:"last_seen_at,omitempty"`
+	CreatedAt  string  `json:"created_at"`
+}
+
+// ListNodesResponse is the response from GET /ops/nodes.
+type ListNodesResponse struct {
+	Nodes []Node `json:"nodes"`
+}
+
 // DefaultSince returns the ISO 8601 timestamp for 24 hours ago.
 func DefaultSince() string {
 	return time.Now().UTC().Add(-24 * time.Hour).Format(time.RFC3339)

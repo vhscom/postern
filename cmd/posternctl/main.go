@@ -32,6 +32,7 @@ const (
 	stateEventStats
 	stateAgents
 	stateSubscriptionHistory
+	stateNodes
 	stateTailEvents
 	stateFrameInspector
 	stateFrameDetail
@@ -54,6 +55,9 @@ const (
 	// Agents
 	// Subscriptions
 	actionViewSubscriptionHistory
+	// Nodes
+	actionViewNodes
+	actionViewNodesForUser
 	// Agents
 	actionListAgents
 	actionProvisionAgent
@@ -89,6 +93,10 @@ var menuItems = []menuItem{
 
 	{label: "SUBSCRIPTIONS", isHeader: true},
 	{label: "View subscription history", action: actionViewSubscriptionHistory},
+
+	{label: "NODES", isHeader: true},
+	{label: "View all nodes", action: actionViewNodes},
+	{label: "View nodes for user", action: actionViewNodesForUser},
 
 	{label: "AGENTS", isHeader: true},
 	{label: "List agents", action: actionListAgents},
@@ -126,6 +134,11 @@ type agentsMsg struct {
 type subscriptionHistoryMsg struct {
 	resp *api.SubscriptionHistoryResponse
 	err  error
+}
+
+type nodesMsg struct {
+	nodes []api.Node
+	err   error
 }
 
 type tailConnectedMsg struct {
@@ -169,6 +182,7 @@ type model struct {
 	eventSince          string
 	agents              []api.Agent
 	subscriptionHistory *api.SubscriptionHistoryResponse
+	nodeList            []api.Node
 	dataErr             error
 
 	// tail events state
@@ -246,6 +260,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.dataErr = msg.err
 		m.state = stateSubscriptionHistory
 		return m, nil
+	case nodesMsg:
+		m.nodeList = msg.nodes
+		m.dataErr = msg.err
+		m.state = stateNodes
+		return m, nil
 	case tailConnectedMsg:
 		if msg.err != nil {
 			m.tailErr = msg.err
@@ -310,7 +329,7 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleFrameInspector(msg)
 	case stateFrameDetail:
 		return m.handleFrameDetail(msg)
-	case stateResult, stateSessions, stateEventStats, stateAgents, stateSubscriptionHistory:
+	case stateResult, stateSessions, stateEventStats, stateAgents, stateSubscriptionHistory, stateNodes:
 		return m.handleDataView(key)
 	}
 	return m, nil
@@ -377,6 +396,12 @@ func (m model) dispatchAction() (model, tea.Cmd) {
 			"  Combine:   login.*,session.revoke"
 	case actionViewSubscriptionHistory:
 		m.subscriptionHistory = nil
+		m.startInput([]string{"User ID"})
+	case actionViewNodes:
+		m.nodeList = nil
+		return m, m.fetchNodes("")
+	case actionViewNodesForUser:
+		m.nodeList = nil
 		m.startInput([]string{"User ID"})
 	case actionListAgents:
 		m.agents = nil
@@ -458,6 +483,10 @@ func (m model) afterInputComplete() (model, tea.Cmd) {
 		m.state = stateSubscriptionHistory
 		m.subscriptionHistory = nil
 		return m, m.fetchSubscriptionHistory(m.inputs[0])
+	case actionViewNodesForUser:
+		m.state = stateNodes
+		m.nodeList = nil
+		return m, m.fetchNodes(m.inputs[0])
 	case actionTailEvents:
 		filter := strings.TrimSpace(m.inputs[0])
 		if filter != "" {
@@ -634,6 +663,16 @@ func (m model) fetchSubscriptionHistory(userID string) tea.Cmd {
 			return subscriptionHistoryMsg{err: err}
 		}
 		return subscriptionHistoryMsg{resp: resp}
+	}
+}
+
+func (m model) fetchNodes(userID string) tea.Cmd {
+	return func() tea.Msg {
+		resp, err := m.client.ListNodes(context.Background(), userID)
+		if err != nil {
+			return nodesMsg{err: err}
+		}
+		return nodesMsg{nodes: resp.Nodes}
 	}
 }
 
@@ -970,6 +1009,8 @@ func (m model) View() string {
 		b.WriteString(m.viewEventStats())
 	case stateSubscriptionHistory:
 		b.WriteString(m.viewSubscriptionHistory())
+	case stateNodes:
+		b.WriteString(m.viewNodes())
 	case stateAgents:
 		b.WriteString(m.viewAgents())
 	case stateTailEvents:
@@ -1346,6 +1387,68 @@ func (m model) viewSubscriptionHistory() string {
 	return b.String()
 }
 
+func (m model) viewNodes() string {
+	var b strings.Builder
+
+	if m.dataErr != nil {
+		b.WriteString(ui.ErrorStyle.Render(fmt.Sprintf("Error: %v", m.dataErr)))
+		b.WriteString(ui.DimStyle.Render("\n\nenter continue | q quit"))
+		return b.String()
+	}
+
+	if m.nodeList == nil {
+		b.WriteString(ui.DimStyle.Render("Loading..."))
+		return b.String()
+	}
+
+	if len(m.nodeList) == 0 {
+		b.WriteString(ui.DimStyle.Render("No nodes found."))
+		b.WriteString(ui.DimStyle.Render("\n\nenter continue | q quit"))
+		return b.String()
+	}
+
+	b.WriteString(fmt.Sprintf("Nodes (%d)\n\n", len(m.nodeList)))
+
+	columns := []ui.Column{
+		{Header: "ID", Width: 6},
+		{Header: "User", Width: 8},
+		{Header: "Label", Width: 16},
+		{Header: "Pubkey", Width: 20},
+		{Header: "Endpoint", Width: 22},
+		{Header: "Allowed IPs", Width: 18},
+		{Header: "Last Seen", Width: 20},
+	}
+
+	rows := make([][]string, len(m.nodeList))
+	for i, n := range m.nodeList {
+		endpoint := "-"
+		if n.WGEndpoint != nil {
+			endpoint = *n.WGEndpoint
+		}
+		lastSeen := "-"
+		if n.LastSeenAt != nil {
+			lastSeen = *n.LastSeenAt
+		}
+		pubkey := n.WGPubkey
+		if len(pubkey) > 18 {
+			pubkey = pubkey[:16] + ".."
+		}
+		rows[i] = []string{
+			fmt.Sprintf("%d", n.ID),
+			fmt.Sprintf("%d", n.UserID),
+			n.Label,
+			pubkey,
+			endpoint,
+			n.AllowedIPs,
+			lastSeen,
+		}
+	}
+
+	b.WriteString(ui.RenderTable(columns, rows))
+	b.WriteString(ui.DimStyle.Render("\nenter continue | q quit"))
+	return b.String()
+}
+
 func (m model) viewTailEvents() string {
 	var b strings.Builder
 
@@ -1501,6 +1604,10 @@ func printUsage() {
 	fmt.Println()
 	fmt.Println("  " + label("Subscriptions"))
 	fmt.Println("    View subscription history    " + dim("Show tier changes for a user"))
+	fmt.Println()
+	fmt.Println("  " + label("Nodes"))
+	fmt.Println("    View all nodes                " + dim("List all mesh nodes"))
+	fmt.Println("    View nodes for user           " + dim("List nodes filtered by user ID"))
 	fmt.Println()
 	fmt.Println("  " + label("Agents"))
 	fmt.Println("    List agents                   " + dim("Show agent credentials"))

@@ -346,6 +346,54 @@ func handleOpsSubscriptionHistory(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// GET /ops/nodes
+func handleOpsNodeList(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	uid := q.Get("user_id")
+
+	where := "1=1"
+	args := []any{}
+	if uid != "" {
+		where += " AND n.user_id = ?"
+		args = append(args, uid)
+	}
+
+	rows, err := store.Query(
+		`SELECT n.id, n.user_id, n.label, n.wg_pubkey, n.wg_endpoint, n.allowed_ips,
+			n.last_seen_at, n.created_at
+		FROM user_node n WHERE `+where+` ORDER BY n.created_at DESC`,
+		args...,
+	)
+	if err != nil {
+		jsonError(w, 500, "INTERNAL_ERROR", "Query failed")
+		return
+	}
+	defer rows.Close()
+
+	var nodes []map[string]any
+	for rows.Next() {
+		var id, userID int
+		var label, pubkey, allowedIPs, created string
+		var endpoint, lastSeen *string
+		rows.Scan(&id, &userID, &label, &pubkey, &endpoint, &allowedIPs, &lastSeen, &created)
+		n := map[string]any{
+			"id": id, "user_id": userID, "label": label, "wg_pubkey": pubkey,
+			"allowed_ips": allowedIPs, "created_at": created,
+		}
+		if endpoint != nil {
+			n["wg_endpoint"] = *endpoint
+		}
+		if lastSeen != nil {
+			n["last_seen_at"] = *lastSeen
+		}
+		nodes = append(nodes, n)
+	}
+	if nodes == nil {
+		nodes = []map[string]any{}
+	}
+	jsonOK(w, map[string]any{"nodes": nodes})
+}
+
 func nullStringPtr(ns sql.NullString) *string {
 	if ns.Valid {
 		return &ns.String
