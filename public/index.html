@@ -438,38 +438,38 @@
         </form>
     </auth-step>
 
-    <auth-step label="Peers" method="GET" path="/account/peers">
+    <auth-step label="Nodes" method="GET" path="/account/nodes">
         <p class="step-description">
-            View your peer configurations and tier status. Each peer is a WireGuard
-            endpoint you control. Free tier allows 1 peer; upgrade for more.
+            View your mesh nodes and tier limits. Each node is a machine running the
+            postern agent with its own WireGuard keypair. Free tier allows 2 nodes.
         </p>
-        <button type="button" data-action="probe">Load Peers</button>
+        <button type="button" data-action="probe">Load Nodes</button>
     </auth-step>
 
-    <auth-step label="Save Peer" method="PUT" path="/account/peers">
+    <auth-step label="Add Node" method="POST" path="/account/nodes">
         <p class="step-description">
-            Save a peer configuration. If the label matches an existing peer, its
-            endpoint and public key will be updated. Labels are alphanumeric with
-            hyphens, max 32 characters.
+            Register a new node in the mesh. The server returns an API key for the
+            agent. In practice, use <code style="color:var(--color-accent)">postern node add</code>
+            which generates the keypair and writes the agent config automatically.
         </p>
         <form>
             <label>
                 Label:
-                <input type="text" name="label" placeholder="home" pattern="[a-zA-Z0-9\-]{1,32}" autocomplete="off" required>
-            </label>
-            <label>
-                Endpoint:
-                <input type="text" name="endpoint" placeholder="home.example.com:51820" autocomplete="off" required>
+                <input type="text" name="label" placeholder="gateway-nyc" pattern="[a-zA-Z0-9\-]{1,32}" autocomplete="off" required>
             </label>
             <label>
                 WireGuard Public Key:
                 <input type="text" name="wg_pubkey" placeholder="xTIBA5rboUvnH4hto..." autocomplete="off" required>
             </label>
-            <label class="confirm-overwrite" hidden style="flex-direction:row;align-items:center;gap:.5rem">
-                <input type="checkbox" name="confirm" value="true" style="min-height:auto;width:auto;padding:0">
-                Overwrite existing peer
+            <label>
+                Mesh IP:
+                <input type="text" name="allowed_ips" placeholder="10.0.0.1/32" autocomplete="off" required>
             </label>
-            <button type="submit">Save Edge</button>
+            <label>
+                Endpoint (optional):
+                <input type="text" name="wg_endpoint" placeholder="1.2.3.4:51820" autocomplete="off">
+            </label>
+            <button type="submit">Add Node</button>
         </form>
     </auth-step>
 
