@@ -9,6 +9,7 @@ import (
 
 // peerConfig is the desired state for a single WireGuard peer.
 type peerConfig struct {
+	NodeID              int    `json:"node_id,omitempty"`
 	Label               string `json:"label,omitempty"`
 	PublicKey           string `json:"public_key"`
 	Endpoint            string `json:"endpoint,omitempty"`

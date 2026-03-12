@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 )
 
 const (
@@ -31,7 +32,7 @@ func handleNodeList(w http.ResponseWriter, r *http.Request) {
 
 	rows, err := store.Query(
 		`SELECT label, wg_pubkey, wg_endpoint, wg_listen_port, allowed_ips, persistent_keepalive,
-			interface_name, last_seen_at, created_at, updated_at
+			interface_name, wg_endpoint_source, last_seen_at, created_at, updated_at
 		FROM user_node WHERE user_id = ? ORDER BY created_at`,
 		claims.UID,
 	)
@@ -42,24 +43,27 @@ func handleNodeList(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 
 	type node struct {
-		Label      string  `json:"label"`
-		WGPubkey   string  `json:"wg_pubkey"`
-		WGEndpoint *string `json:"wg_endpoint"`
-		ListenPort int     `json:"wg_listen_port"`
-		AllowedIPs string  `json:"allowed_ips"`
-		Keepalive  int     `json:"persistent_keepalive"`
-		Interface  string  `json:"interface_name"`
-		LastSeenAt *string `json:"last_seen_at"`
-		CreatedAt  string  `json:"created_at"`
-		UpdatedAt  string  `json:"updated_at"`
+		Label          string  `json:"label"`
+		WGPubkey       string  `json:"wg_pubkey"`
+		WGEndpoint     *string `json:"wg_endpoint"`
+		ListenPort     int     `json:"wg_listen_port"`
+		AllowedIPs     string  `json:"allowed_ips"`
+		Keepalive      int     `json:"persistent_keepalive"`
+		Interface      string  `json:"interface_name"`
+		EndpointSource string  `json:"wg_endpoint_source"`
+		Status         string  `json:"status"`
+		LastSeenAt     *string `json:"last_seen_at"`
+		CreatedAt      string  `json:"created_at"`
+		UpdatedAt      string  `json:"updated_at"`
 	}
 	var nodes []node
 	for rows.Next() {
 		var n node
 		if err := rows.Scan(&n.Label, &n.WGPubkey, &n.WGEndpoint, &n.ListenPort, &n.AllowedIPs,
-			&n.Keepalive, &n.Interface, &n.LastSeenAt, &n.CreatedAt, &n.UpdatedAt); err != nil {
+			&n.Keepalive, &n.Interface, &n.EndpointSource, &n.LastSeenAt, &n.CreatedAt, &n.UpdatedAt); err != nil {
 			continue
 		}
+		n.Status = computeNodeStatus(n.LastSeenAt)
 		nodes = append(nodes, n)
 	}
 	if nodes == nil {
@@ -150,13 +154,16 @@ func handleNodeCreate(w http.ResponseWriter, r *http.Request) {
 
 	// Create node record
 	var wgEndpoint *string
+	endpointSource := "manual"
 	if body.WGEndpoint != "" {
 		wgEndpoint = &body.WGEndpoint
+	} else {
+		endpointSource = "stun" // no endpoint provided — allow STUN discovery
 	}
 	_, err = store.Exec(
-		`INSERT INTO user_node (user_id, label, wg_pubkey, wg_endpoint, wg_listen_port, allowed_ips, persistent_keepalive, interface_name, agent_credential_id)
-		VALUES (?,?,?,?,?,?,?,?,?)`,
-		claims.UID, body.Label, body.WGPubkey, wgEndpoint, body.ListenPort, body.AllowedIPs, body.Keepalive, body.Interface, credID,
+		`INSERT INTO user_node (user_id, label, wg_pubkey, wg_endpoint, wg_listen_port, allowed_ips, persistent_keepalive, interface_name, agent_credential_id, wg_endpoint_source)
+		VALUES (?,?,?,?,?,?,?,?,?,?)`,
+		claims.UID, body.Label, body.WGPubkey, wgEndpoint, body.ListenPort, body.AllowedIPs, body.Keepalive, body.Interface, credID, endpointSource,
 	)
 	if err != nil {
 		store.Exec("DELETE FROM agent_credential WHERE id = ?", credID)
@@ -232,13 +239,14 @@ func handleNodeUpdate(w http.ResponseWriter, r *http.Request) {
 	args := []any{}
 
 	if body.WGEndpoint != nil {
-		sets = append(sets, "wg_endpoint = ?")
+		sets = append(sets, "wg_endpoint = ?", "wg_endpoint_source = ?")
 		v := strings.TrimSpace(*body.WGEndpoint)
 		if v == "" {
 			args = append(args, nil)
 		} else {
 			args = append(args, v)
 		}
+		args = append(args, "manual")
 	}
 	if body.ListenPort != nil {
 		sets = append(sets, "wg_listen_port = ?")
@@ -311,4 +319,24 @@ func handleNodeDelete(w http.ResponseWriter, r *http.Request) {
 	go notifyNodeSync(claims.UID)
 
 	jsonOK(w, map[string]any{"ok": true})
+}
+
+// computeNodeStatus returns "online", "idle", or "offline" based on last_seen_at.
+func computeNodeStatus(lastSeenAt *string) string {
+	if lastSeenAt == nil {
+		return "offline"
+	}
+	t, err := time.Parse("2006-01-02 15:04:05", *lastSeenAt)
+	if err != nil {
+		return "offline"
+	}
+	age := time.Since(t)
+	switch {
+	case age < 2*time.Minute:
+		return "online"
+	case age < 10*time.Minute:
+		return "idle"
+	default:
+		return "offline"
+	}
 }

@@ -141,8 +141,20 @@ func migrate() {
 		}
 	}
 
+	// v4: STUN endpoint discovery source tracking
+	if currentVersion < 4 {
+		v4 := []string{
+			`ALTER TABLE user_node ADD COLUMN wg_endpoint_source TEXT NOT NULL DEFAULT 'manual'`,
+		}
+		for _, s := range v4 {
+			if _, err := store.Exec(s); err != nil {
+				log.Fatalf("migrate v4: %v\n%s", err, s)
+			}
+		}
+	}
+
 	// Record schema version (bump this number when adding migrations above)
-	const schemaVersion = 3
+	const schemaVersion = 4
 	if currentVersion < schemaVersion {
 		store.Exec("INSERT OR IGNORE INTO schema_version (version) VALUES (?)", schemaVersion)
 	}

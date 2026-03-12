@@ -1,8 +1,6 @@
 package cli
 
 import (
-	"crypto/rand"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,7 +9,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"golang.org/x/crypto/curve25519"
+	"github.com/charmbracelet/lipgloss"
+
+	"postern/internal/wgkey"
 )
 
 // RunNode handles "postern node <subcommand>".
@@ -99,7 +99,7 @@ func runNodeAdd() {
 	}
 
 	// Generate WireGuard keypair
-	privKey, pubKey, err := generateKeypair()
+	privKey, pubKey, err := wgkey.GenerateKeypair()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error generating keypair: %v\n", err)
 		os.Exit(1)
@@ -288,7 +288,7 @@ func runNodeList() {
 			WGPubkey   string  `json:"wg_pubkey"`
 			WGEndpoint *string `json:"wg_endpoint"`
 			AllowedIPs string  `json:"allowed_ips"`
-			LastSeenAt *string `json:"last_seen_at"`
+			Status     string  `json:"status"`
 		} `json:"nodes"`
 	}
 	json.Unmarshal(body, &result)
@@ -310,12 +310,12 @@ func runNodeList() {
 		if n.WGEndpoint != nil {
 			endpoint = *n.WGEndpoint
 		}
-		status := "offline"
-		if n.LastSeenAt != nil {
-			status = "seen"
+		status := n.Status
+		if status == "" {
+			status = "offline"
 		}
-		fmt.Printf("  %-16s %-18s %-24s %-10s\n",
-			n.Label, n.AllowedIPs, endpoint, status)
+		fmt.Printf("  %-16s %-18s %-24s %s\n",
+			n.Label, n.AllowedIPs, endpoint, colorStatus(status))
 	}
 }
 
@@ -355,22 +355,19 @@ func runNodeRemove() {
 	fmt.Printf("Node '%s' removed from mesh.\n", label)
 }
 
-func generateKeypair() (privateKey, publicKey string, err error) {
-	var private [32]byte
-	if _, err := rand.Read(private[:]); err != nil {
-		return "", "", err
+var (
+	statusOnline  = lipgloss.NewStyle().Foreground(lipgloss.Color("2")) // green
+	statusIdle    = lipgloss.NewStyle().Foreground(lipgloss.Color("3")) // yellow
+	statusOffline = lipgloss.NewStyle().Foreground(lipgloss.Color("1")) // red
+)
+
+func colorStatus(status string) string {
+	switch status {
+	case "online":
+		return statusOnline.Render(status)
+	case "idle":
+		return statusIdle.Render(status)
+	default:
+		return statusOffline.Render(status)
 	}
-
-	// Clamp private key per WireGuard spec
-	private[0] &= 248
-	private[31] &= 127
-	private[31] |= 64
-
-	pub, err := curve25519.X25519(private[:], curve25519.Basepoint)
-	if err != nil {
-		return "", "", err
-	}
-
-	return base64.StdEncoding.EncodeToString(private[:]),
-		base64.StdEncoding.EncodeToString(pub), nil
 }

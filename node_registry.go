@@ -80,6 +80,7 @@ func notifyNodeSync(userID int) {
 
 	// Each connected node gets all OTHER nodes as peers
 	type syncPeer struct {
+		NodeID    int    `json:"node_id"`
 		PublicKey  string `json:"public_key"`
 		Endpoint   string `json:"endpoint,omitempty"`
 		AllowedIPs string `json:"allowed_ips"`
@@ -97,6 +98,7 @@ func notifyNodeSync(userID int) {
 				ep = *n.Endpoint
 			}
 			peers = append(peers, syncPeer{
+				NodeID:     n.ID,
 				PublicKey:  n.Pubkey,
 				Endpoint:   ep,
 				AllowedIPs: n.AllowedIPs,
