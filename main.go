@@ -22,6 +22,7 @@ type Config struct {
 	AccessSecret     string
 	RefreshSecret    string
 	AgentSecret      string // optional: enables /ops surface
+	OpsAddr          string // optional: separate ops listener
 	GatewayURL       string // optional: enables control proxy
 	GatewayToken     string // optional: enables WS proxy token injection
 	AllowedIPs       map[string]bool
@@ -112,13 +113,21 @@ func main() {
 		}),
 	))))
 
-	// Mount ops under cloak
-	mux.Handle("/ops/", cloakOps(ops))
+	// Mount ops: either on main mux (cloaked) or split to dedicated listener
+	splitOps := cfg.OpsAddr != "" && cfg.AgentSecret != ""
+	if !splitOps {
+		mux.Handle("/ops/", cloakOps(ops))
+	}
 
 	// Global middleware stack: access log → security headers → routes
 	handler := accessLog(securityHeaders(mux))
 
 	srv := &http.Server{Addr: cfg.Addr, Handler: handler}
+
+	var opsSrv *http.Server
+	if splitOps {
+		opsSrv = &http.Server{Addr: cfg.OpsAddr, Handler: accessLog(securityHeaders(ops))}
+	}
 
 	// Graceful shutdown on SIGINT/SIGTERM
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -126,7 +135,9 @@ func main() {
 
 	go func() {
 		log.Printf("postern %s (db: %s)", cfg.Addr, cfg.DBPath)
-		if cfg.AgentSecret != "" {
+		if splitOps {
+			log.Printf("  /ops surface → %s", cfg.OpsAddr)
+		} else if cfg.AgentSecret != "" {
 			log.Printf("  /ops surface enabled")
 		}
 		if cfg.GatewayURL != "" {
@@ -137,11 +148,22 @@ func main() {
 		}
 	}()
 
+	if opsSrv != nil {
+		go func() {
+			if err := opsSrv.ListenAndServe(); err != http.ErrServerClosed {
+				log.Fatal(err)
+			}
+		}()
+	}
+
 	<-ctx.Done()
 	log.Printf("shutting down...")
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+	if opsSrv != nil {
+		opsSrv.Shutdown(shutdownCtx)
+	}
 	srv.Shutdown(shutdownCtx)
 	store.Close()
 }
@@ -153,6 +175,7 @@ func loadConfig() *Config {
 		AccessSecret:     mustEnv("JWT_ACCESS_SECRET"),
 		RefreshSecret:    mustEnv("JWT_REFRESH_SECRET"),
 		AgentSecret:      os.Getenv("AGENT_PROVISIONING_SECRET"),
+		OpsAddr:          os.Getenv("OPS_ADDR"),
 		GatewayURL:       os.Getenv("GATEWAY_URL"),
 		GatewayToken:     os.Getenv("GATEWAY_TOKEN"),
 		CookieSecure:     os.Getenv("ENVIRONMENT") == "production",
