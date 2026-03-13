@@ -155,14 +155,14 @@ func runServe() {
 	ops.Handle("POST /ops/agents", requireProvisioningSecret(http.HandlerFunc(handleOpsAgentCreate)))
 	ops.Handle("DELETE /ops/agents/{name}", requireProvisioningSecret(http.HandlerFunc(handleOpsAgentRevoke)))
 
-	// Agent-key protected routes
-	ops.Handle("GET /ops/agents", requireAgentKey(http.HandlerFunc(handleOpsAgentList)))
-	ops.Handle("GET /ops/sessions", requireAgentKey(http.HandlerFunc(handleOpsSessions)))
+	// Agent-key protected routes (node-trust agents are blocked by requireOpsAgent)
+	ops.Handle("GET /ops/agents", requireAgentKey(requireOpsAgent(http.HandlerFunc(handleOpsAgentList))))
+	ops.Handle("GET /ops/sessions", requireAgentKey(requireOpsAgent(http.HandlerFunc(handleOpsSessions))))
 	ops.Handle("POST /ops/sessions/revoke", requireAgentKey(requireWriteTrust(http.HandlerFunc(handleOpsSessionRevoke))))
-	ops.Handle("GET /ops/events", requireAgentKey(http.HandlerFunc(handleOpsEvents)))
-	ops.Handle("GET /ops/events/stats", requireAgentKey(http.HandlerFunc(handleOpsEventStats)))
-	ops.Handle("GET /ops/subscriptions/{user_id}/history", requireAgentKey(http.HandlerFunc(handleOpsSubscriptionHistory)))
-	ops.Handle("GET /ops/nodes", requireAgentKey(http.HandlerFunc(handleOpsNodeList)))
+	ops.Handle("GET /ops/events", requireAgentKey(requireOpsAgent(http.HandlerFunc(handleOpsEvents))))
+	ops.Handle("GET /ops/events/stats", requireAgentKey(requireOpsAgent(http.HandlerFunc(handleOpsEventStats))))
+	ops.Handle("GET /ops/subscriptions/{user_id}/history", requireAgentKey(requireOpsAgent(http.HandlerFunc(handleOpsSubscriptionHistory))))
+	ops.Handle("GET /ops/nodes", requireAgentKey(requireOpsAgent(http.HandlerFunc(handleOpsNodeList))))
 
 	// WebSocket multiplexer: Bearer → agent WS, Cookie → bridge proxy
 	ops.HandleFunc("GET /ops/ws", func(w http.ResponseWriter, r *http.Request) {

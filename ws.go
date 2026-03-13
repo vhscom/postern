@@ -70,7 +70,9 @@ func (c *wsConn) safeWriteControl(messageType int, data []byte, deadline time.Ti
 	return c.Conn.WriteControl(messageType, data, deadline)
 }
 
-// Allowed capabilities by trust level
+// Allowed capabilities by trust level.
+// Node-bound agents (user_id set) have ops caps stripped during negotiation
+// and are blocked from ops REST endpoints by requireOpsAgent.
 var capsByTrust = map[string]map[string]bool{
 	"read":  {"query_events": true, "query_sessions": true, "subscribe_events": true, "wg_sync": true, "wg_status": true, "endpoint_discovery": true, "key_rotate": true},
 	"write": {"query_events": true, "query_sessions": true, "subscribe_events": true, "revoke_session": true, "wg_sync": true, "wg_status": true, "endpoint_discovery": true, "key_rotate": true},
@@ -196,11 +198,18 @@ func negotiateCapabilities(conn *wsConn, agent *AgentPrincipal, connID string) m
 	allowed := capsByTrust[agent.TrustLevel]
 	granted := map[string]bool{}
 	denied := []map[string]string{}
+
+	// Ops capabilities are only available to ops agents (no user_id).
+	// Node-bound agents are restricted to mesh capabilities.
+	opsCaps := map[string]bool{"query_events": true, "query_sessions": true, "subscribe_events": true, "revoke_session": true}
+
 	for _, cap := range msg.Capabilities {
-		if allowed[cap] {
-			granted[cap] = true
-		} else {
+		if !allowed[cap] {
 			denied = append(denied, map[string]string{"capability": cap, "reason": "not_allowed"})
+		} else if agent.UserID != nil && opsCaps[cap] {
+			denied = append(denied, map[string]string{"capability": cap, "reason": "not_allowed"})
+		} else {
+			granted[cap] = true
 		}
 	}
 

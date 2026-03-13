@@ -31,6 +31,7 @@ type AgentPrincipal struct {
 	ID         int
 	Name       string
 	TrustLevel string
+	UserID     *int // set for node-bound agents, nil for ops agents
 }
 
 func getAgent(r *http.Request) *AgentPrincipal {
@@ -112,9 +113,9 @@ func requireAgentKey(next http.Handler) http.Handler {
 
 		var agent AgentPrincipal
 		err := store.QueryRow(
-			"SELECT id, name, trust_level FROM agent_credential WHERE key_hash = ? AND revoked_at IS NULL",
+			"SELECT id, name, trust_level, user_id FROM agent_credential WHERE key_hash = ? AND revoked_at IS NULL",
 			keyHash,
-		).Scan(&agent.ID, &agent.Name, &agent.TrustLevel)
+		).Scan(&agent.ID, &agent.Name, &agent.TrustLevel, &agent.UserID)
 		if err != nil {
 			emitEvent("agent.auth_failure", clientIP(r), 0, r.UserAgent(), 401, nil)
 			jsonError(w, http.StatusUnauthorized, "INVALID_KEY", "Invalid API key")
@@ -122,6 +123,20 @@ func requireAgentKey(next http.Handler) http.Handler {
 		}
 		ctx := context.WithValue(r.Context(), ctxAgentPrincipal, &agent)
 		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+// requireOpsAgent restricts access to system-level agent credentials.
+// Node-bound credentials (user_id set) are scoped to a single user's mesh
+// and must not reach the cross-tenant ops surface.
+func requireOpsAgent(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		agent := getAgent(r)
+		if agent == nil || agent.UserID != nil {
+			jsonError(w, http.StatusForbidden, "INSUFFICIENT_TRUST", "Ops access requires a system agent credential")
+			return
+		}
+		next.ServeHTTP(w, r)
 	})
 }
 
