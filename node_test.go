@@ -455,4 +455,82 @@ func TestNodeListStatusAPI(t *testing.T) {
 	}
 }
 
+func TestNodeCredentialHasUserID(t *testing.T) {
+	srv, cookies := setupNodeServer(t)
+	defer srv.Close()
+
+	resp, body := jsonPost(srv.URL+"/account/nodes", map[string]string{
+		"label": "trust-check", "wg_pubkey": "xTIBA5rboUvnH4htodjb6e697QjLERt1NAB4mZqp8Dg=",
+		"allowed_ips": "10.0.0.1/32",
+	}, cookies)
+	if resp.StatusCode != 201 {
+		t.Fatalf("expected 201, got %d", resp.StatusCode)
+	}
+
+	// Verify the credential has user_id set (node-bound)
+	apiKey := body["api_key"].(string)
+	keyHash := hashAPIKey(apiKey)
+	var userID *int
+	err := store.QueryRow("SELECT user_id FROM agent_credential WHERE key_hash = ?", keyHash).Scan(&userID)
+	if err != nil {
+		t.Fatalf("lookup credential: %v", err)
+	}
+	if userID == nil {
+		t.Error("node credential should have user_id set")
+	}
+}
+
+func TestNodeAgentBlockedFromOpsEndpoints(t *testing.T) {
+	cfg = &Config{
+		Addr:          ":0",
+		DBPath:        ":memory:",
+		AccessSecret:  "test-access",
+		RefreshSecret: "test-refresh",
+		AgentSecret:   "test-secret",
+		Environment:   "development",
+	}
+	initDB(cfg.DBPath)
+
+	store.Exec("INSERT INTO account (email, password_data) VALUES ('test@test.com', 'x')")
+
+	// Node-bound credential (has user_id) — should be blocked from ops
+	nodeKey := randomHex(32)
+	nodeHash := hashAPIKey(nodeKey)
+	store.Exec("INSERT INTO agent_credential (name, key_hash, trust_level, user_id) VALUES ('node-agent', ?, 'read', 1)", nodeHash)
+
+	// Ops credential (no user_id) — should be allowed
+	opsKey := randomHex(32)
+	opsHash := hashAPIKey(opsKey)
+	store.Exec("INSERT INTO agent_credential (name, key_hash, trust_level) VALUES ('ops-agent', ?, 'read')", opsHash)
+
+	mux := http.NewServeMux()
+	mux.Handle("GET /ops/events", requireAgentKey(requireOpsAgent(http.HandlerFunc(handleOpsEvents))))
+	mux.Handle("GET /ops/sessions", requireAgentKey(requireOpsAgent(http.HandlerFunc(handleOpsSessions))))
+	mux.Handle("GET /ops/nodes", requireAgentKey(requireOpsAgent(http.HandlerFunc(handleOpsNodeList))))
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	endpoints := []string{"/ops/events", "/ops/sessions", "/ops/nodes"}
+
+	// Node-bound agent should be blocked
+	for _, ep := range endpoints {
+		req, _ := http.NewRequest("GET", srv.URL+ep, nil)
+		req.Header.Set("Authorization", "Bearer "+nodeKey)
+		resp, _ := http.DefaultClient.Do(req)
+		if resp.StatusCode != 403 {
+			t.Errorf("node agent on %s: expected 403, got %d", ep, resp.StatusCode)
+		}
+	}
+
+	// Ops agent should be allowed
+	for _, ep := range endpoints {
+		req, _ := http.NewRequest("GET", srv.URL+ep, nil)
+		req.Header.Set("Authorization", "Bearer "+opsKey)
+		resp, _ := http.DefaultClient.Do(req)
+		if resp.StatusCode != 200 {
+			t.Errorf("ops agent on %s: expected 200, got %d", ep, resp.StatusCode)
+		}
+	}
+}
+
 func strPtr(s string) *string { return &s }
