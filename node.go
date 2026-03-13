@@ -39,7 +39,7 @@ func handleNodeList(w http.ResponseWriter, r *http.Request) {
 		CreatedAt      string  `json:"created_at"`
 		UpdatedAt      string  `json:"updated_at"`
 	}
-	var nodes []node
+	nodes := make([]node, 0)
 	for rows.Next() {
 		var n node
 		if err := rows.Scan(&n.Label, &n.WGPubkey, &n.WGEndpoint, &n.ListenPort, &n.AllowedIPs,
@@ -48,9 +48,6 @@ func handleNodeList(w http.ResponseWriter, r *http.Request) {
 		}
 		n.Status = computeNodeStatus(n.LastSeenAt)
 		nodes = append(nodes, n)
-	}
-	if nodes == nil {
-		nodes = []node{}
 	}
 	jsonOK(w, map[string]any{
 		"nodes": nodes,
@@ -165,9 +162,7 @@ func handleNodeCreate(w http.ResponseWriter, r *http.Request) {
 		resp["ops_url"] = u
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(resp)
+	jsonCreated(w, resp)
 }
 
 // PUT /account/nodes/{label}
@@ -209,11 +204,10 @@ func handleNodeUpdate(w http.ResponseWriter, r *http.Request) {
 		sets = append(sets, "wg_endpoint = ?", "wg_endpoint_source = ?")
 		v := strings.TrimSpace(*body.WGEndpoint)
 		if v == "" {
-			args = append(args, nil)
+			args = append(args, nil, "manual")
 		} else {
-			args = append(args, v)
+			args = append(args, v, "manual")
 		}
-		args = append(args, "manual")
 	}
 	if body.ListenPort != nil {
 		sets = append(sets, "wg_listen_port = ?")

@@ -26,9 +26,7 @@ func handleInviteCreate(w http.ResponseWriter, r *http.Request) {
 
 	emitEvent("invite.created", clientIP(r), claims.UID, r.UserAgent(), http.StatusCreated, nil)
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(map[string]any{
+	jsonCreated(w, map[string]any{
 		"token":        token,
 		"expires_in":   "24h",
 		"join_command": fmt.Sprintf("postern join %s %s", cfg.BaseURL, token),
@@ -143,7 +141,5 @@ func handleJoinRedeem(w http.ResponseWriter, r *http.Request) {
 		resp["ops_url"] = u
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(resp)
+	jsonCreated(w, resp)
 }

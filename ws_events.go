@@ -112,7 +112,7 @@ func handleWSQueryEvents(conn *wsConn, id string, payload json.RawMessage) {
 	}
 	defer rows.Close()
 
-	var events []map[string]any
+	events := make([]map[string]any, 0)
 	for rows.Next() {
 		var eid int
 		var typ, ip, created, actor string
@@ -127,9 +127,6 @@ func handleWSQueryEvents(conn *wsConn, id string, payload json.RawMessage) {
 			e["detail"] = *detail
 		}
 		events = append(events, e)
-	}
-	if events == nil {
-		events = []map[string]any{}
 	}
 	sendWSResult(conn, id, "query_events", map[string]any{"events": events})
 }
@@ -168,7 +165,7 @@ func handleWSQuerySessions(conn *wsConn, id string, payload json.RawMessage) {
 	}
 	defer rows.Close()
 
-	var sessions []map[string]any
+	sessions := make([]map[string]any, 0)
 	for rows.Next() {
 		var sid, ip, ua, created, expires string
 		var uid int
@@ -177,9 +174,6 @@ func handleWSQuerySessions(conn *wsConn, id string, payload json.RawMessage) {
 			"id": sid, "user_id": uid, "ip_address": ip, "user_agent": ua,
 			"created_at": created, "expires_at": expires,
 		})
-	}
-	if sessions == nil {
-		sessions = []map[string]any{}
 	}
 	sendWSResult(conn, id, "query_sessions", map[string]any{"sessions": sessions})
 }

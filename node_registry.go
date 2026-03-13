@@ -96,7 +96,7 @@ func notifyNodeSync(userID int) {
 	}
 
 	for _, target := range targets {
-		var peers []syncPeer
+		peers := make([]syncPeer, 0)
 		var self *syncSelf
 		for _, n := range allNodes {
 			if n.ID == target.nodeID {
@@ -120,10 +120,6 @@ func notifyNodeSync(userID int) {
 				Keepalive:  n.Keepalive,
 			})
 		}
-		if peers == nil {
-			peers = []syncPeer{}
-		}
-
 		msg := map[string]any{
 			"type": "wg.sync",
 			"payload": map[string]any{

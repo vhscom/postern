@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"strings"
 )
@@ -45,24 +44,12 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 		nonce, solution := extractChallenge(r)
 		if nonce == "" || solution == "" {
 			emitEvent("challenge.issued", ip, 0, r.UserAgent(), 403, map[string]any{"difficulty": ch.Difficulty})
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusForbidden)
-			json.NewEncoder(w).Encode(map[string]any{
-				"error":     "Proof of work required",
-				"code":      "CHALLENGE_REQUIRED",
-				"challenge": ch,
-			})
+			jsonChallenge(w, "CHALLENGE_REQUIRED", "Proof of work required", ch)
 			return
 		}
 		if !verifySignedNonce(nonce, cfg.AccessSecret, ip) || !verifySolution(nonce, solution, ch.Difficulty) {
 			emitEvent("challenge.failed", ip, 0, r.UserAgent(), 403, nil)
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusForbidden)
-			json.NewEncoder(w).Encode(map[string]any{
-				"error":     "Invalid proof of work",
-				"code":      "CHALLENGE_FAILED",
-				"challenge": ch,
-			})
+			jsonChallenge(w, "CHALLENGE_FAILED", "Invalid proof of work", ch)
 			return
 		}
 	}
@@ -158,14 +145,19 @@ func handleMe(w http.ResponseWriter, r *http.Request) {
 // GET /health
 func handleHealth(w http.ResponseWriter, r *http.Request) {
 	status := "ok"
-	code := http.StatusOK
 	if err := store.Ping(); err != nil {
 		status = "degraded"
-		code = http.StatusServiceUnavailable
+		w.WriteHeader(http.StatusServiceUnavailable)
 	}
+	jsonOK(w, map[string]any{"status": status, "timestamp": nowUnix()})
+}
+
+func jsonChallenge(w http.ResponseWriter, code, msg string, ch *Challenge) {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(code)
-	json.NewEncoder(w).Encode(map[string]any{"status": status, "timestamp": fmt.Sprintf("%d", nowUnix())})
+	w.WriteHeader(http.StatusForbidden)
+	json.NewEncoder(w).Encode(map[string]any{
+		"error": msg, "code": code, "challenge": ch,
+	})
 }
 
 func extractChallenge(r *http.Request) (nonce, solution string) {

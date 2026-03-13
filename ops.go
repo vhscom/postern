@@ -40,7 +40,7 @@ func handleOpsSessions(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 
-	var sessions []map[string]any
+	sessions := make([]map[string]any, 0)
 	for rows.Next() {
 		var id, ip, ua, created, expires string
 		var uid int
@@ -49,9 +49,6 @@ func handleOpsSessions(w http.ResponseWriter, r *http.Request) {
 			"id": id, "user_id": uid, "ip_address": ip, "user_agent": ua,
 			"created_at": created, "expires_at": expires,
 		})
-	}
-	if sessions == nil {
-		sessions = []map[string]any{}
 	}
 	jsonOK(w, map[string]any{"sessions": sessions, "count": len(sessions)})
 }
@@ -140,8 +137,7 @@ func handleOpsAgentCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	emitEvent("agent.provisioned", clientIP(r), 0, r.UserAgent(), 201, map[string]any{"name": body.Name})
-	w.WriteHeader(http.StatusCreated)
-	jsonOK(w, map[string]any{
+	jsonCreated(w, map[string]any{
 		"name": body.Name, "trustLevel": body.TrustLevel, "apiKey": apiKey,
 	})
 }
@@ -180,7 +176,7 @@ func handleOpsAgentList(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 
-	var agents []map[string]any
+	agents := make([]map[string]any, 0)
 	for rows.Next() {
 		var id int
 		var name, trust, created string
@@ -196,9 +192,6 @@ func handleOpsAgentList(w http.ResponseWriter, r *http.Request) {
 			a["revoked_at"] = *revoked
 		}
 		agents = append(agents, a)
-	}
-	if agents == nil {
-		agents = []map[string]any{}
 	}
 	jsonOK(w, map[string]any{"agents": agents})
 }
@@ -242,7 +235,7 @@ func handleOpsEvents(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 
-	var events []map[string]any
+	events := make([]map[string]any, 0)
 	for rows.Next() {
 		var id int
 		var typ, ip, created, actor string
@@ -259,9 +252,6 @@ func handleOpsEvents(w http.ResponseWriter, r *http.Request) {
 			e["detail"] = *detail
 		}
 		events = append(events, e)
-	}
-	if events == nil {
-		events = []map[string]any{}
 	}
 	jsonOK(w, map[string]any{"events": events, "count": len(events)})
 }
@@ -327,16 +317,13 @@ func handleOpsSubscriptionHistory(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 
-	var history []map[string]any
+	history := make([]map[string]any, 0)
 	for rows.Next() {
 		var from, to, reason, at string
 		rows.Scan(&from, &to, &reason, &at)
 		history = append(history, map[string]any{
 			"tier_from": from, "tier_to": to, "reason": reason, "created_at": at,
 		})
-	}
-	if history == nil {
-		history = []map[string]any{}
 	}
 
 	jsonOK(w, map[string]any{
@@ -370,7 +357,7 @@ func handleOpsNodeList(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 
-	var nodes []map[string]any
+	nodes := make([]map[string]any, 0)
 	for rows.Next() {
 		var id, userID int
 		var label, pubkey, allowedIPs, created string
@@ -387,9 +374,6 @@ func handleOpsNodeList(w http.ResponseWriter, r *http.Request) {
 			n["last_seen_at"] = *lastSeen
 		}
 		nodes = append(nodes, n)
-	}
-	if nodes == nil {
-		nodes = []map[string]any{}
 	}
 	jsonOK(w, map[string]any{"nodes": nodes})
 }
