@@ -207,22 +207,14 @@ func TestNodeCreateAutoIP(t *testing.T) {
 	}
 }
 
-func TestMigrationV5InviteTable(t *testing.T) {
+func TestInviteTableExists(t *testing.T) {
 	cfg = &Config{DBPath: ":memory:"}
 	initDB(cfg.DBPath)
 
-	// Verify invite_token table exists
 	var name string
 	err := store.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='invite_token'").Scan(&name)
 	if err != nil {
-		t.Fatal("invite_token table should exist after v5 migration")
-	}
-
-	// Verify schema version
-	var version int
-	store.QueryRow("SELECT MAX(version) FROM schema_version").Scan(&version)
-	if version < 5 {
-		t.Errorf("schema version should be >= 5, got %d", version)
+		t.Fatal("invite_token table should exist")
 	}
 }
 

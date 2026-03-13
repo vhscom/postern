@@ -387,11 +387,10 @@ func TestKeyRotateHandler(t *testing.T) {
 	}
 }
 
-func TestMigrationV4EndpointSource(t *testing.T) {
+func TestEndpointSourceDefault(t *testing.T) {
 	cfg = &Config{DBPath: ":memory:"}
 	initDB(cfg.DBPath)
 
-	// Verify the column exists and default is 'manual'
 	store.Exec("INSERT INTO account (email, password_data) VALUES ('test@test.com', 'x')")
 	store.Exec("INSERT INTO agent_credential (name, key_hash, trust_level, user_id) VALUES ('a1', 'h', 'read', 1)")
 	store.Exec(`INSERT INTO user_node (user_id, label, wg_pubkey, allowed_ips, agent_credential_id)
@@ -404,13 +403,6 @@ func TestMigrationV4EndpointSource(t *testing.T) {
 	}
 	if source != "manual" {
 		t.Errorf("default endpoint source should be 'manual', got %q", source)
-	}
-
-	// Verify schema version
-	var version int
-	store.QueryRow("SELECT MAX(version) FROM schema_version").Scan(&version)
-	if version < 4 {
-		t.Errorf("schema version should be >= 4, got %d", version)
 	}
 }
 

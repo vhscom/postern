@@ -8,23 +8,6 @@ import (
 	"time"
 )
 
-const (
-	maxNodesFree = 2
-	maxNodesPro  = 10
-	maxNodesTeam = 25
-)
-
-func nodeLimit(tier string) int {
-	switch tier {
-	case "pro":
-		return maxNodesPro
-	case "team":
-		return maxNodesTeam
-	default:
-		return maxNodesFree
-	}
-}
-
 // GET /account/nodes
 func handleNodeList(w http.ResponseWriter, r *http.Request) {
 	claims := getClaims(r)

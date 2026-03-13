@@ -24,11 +24,6 @@ func initDB(path string) {
 }
 
 func migrate() {
-	// Version tracking — allows future ALTER TABLE migrations
-	store.Exec(`CREATE TABLE IF NOT EXISTS schema_version (version INTEGER PRIMARY KEY, applied_at TEXT DEFAULT (datetime('now')))`)
-	var currentVersion int
-	store.QueryRow("SELECT COALESCE(MAX(version), 0) FROM schema_version").Scan(&currentVersion)
-
 	stmts := []string{
 		`CREATE TABLE IF NOT EXISTS account (
 			id INTEGER PRIMARY KEY,
@@ -68,21 +63,31 @@ func migrate() {
 			key_hash TEXT NOT NULL,
 			trust_level TEXT NOT NULL DEFAULT 'read' CHECK (trust_level IN ('read','write')),
 			description TEXT,
+			user_id INTEGER REFERENCES account(id),
 			created_at TEXT DEFAULT (datetime('now')),
 			revoked_at TEXT
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_agent_active ON agent_credential(name) WHERE revoked_at IS NULL`,
-		`CREATE TABLE IF NOT EXISTS user_peer (
+		`CREATE TABLE IF NOT EXISTS user_node (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			user_id INTEGER NOT NULL REFERENCES account(id),
-			label TEXT NOT NULL DEFAULT 'default',
-			endpoint TEXT NOT NULL,
+			label TEXT NOT NULL,
 			wg_pubkey TEXT NOT NULL,
+			wg_endpoint TEXT,
+			wg_endpoint_source TEXT NOT NULL DEFAULT 'manual',
+			wg_listen_port INTEGER NOT NULL DEFAULT 51820,
+			allowed_ips TEXT NOT NULL DEFAULT '10.0.0.0/32',
+			persistent_keepalive INTEGER NOT NULL DEFAULT 25,
+			interface_name TEXT NOT NULL DEFAULT 'wg0',
+			agent_credential_id INTEGER REFERENCES agent_credential(id),
+			last_seen_at TEXT,
+			last_status TEXT,
 			created_at TEXT DEFAULT (datetime('now')),
 			updated_at TEXT DEFAULT (datetime('now')),
 			UNIQUE(user_id, label)
 		)`,
-		`CREATE INDEX IF NOT EXISTS idx_peer_user ON user_peer(user_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_node_user ON user_node(user_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_node_agent ON user_node(agent_credential_id)`,
 		`CREATE TABLE IF NOT EXISTS user_subscription (
 			user_id INTEGER PRIMARY KEY REFERENCES account(id),
 			stripe_customer_id TEXT UNIQUE,
@@ -100,83 +105,20 @@ func migrate() {
 			created_at TEXT DEFAULT (datetime('now'))
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_sub_history_user ON subscription_history(user_id)`,
+		`CREATE TABLE IF NOT EXISTS invite_token (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			token_hash TEXT UNIQUE NOT NULL,
+			user_id INTEGER NOT NULL REFERENCES account(id),
+			created_at TEXT DEFAULT (datetime('now')),
+			expires_at TEXT NOT NULL,
+			used_at TEXT,
+			used_by_node_id INTEGER REFERENCES user_node(id)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_invite_token_hash ON invite_token(token_hash)`,
 	}
 	for _, s := range stmts {
 		if _, err := store.Exec(s); err != nil {
 			log.Fatalf("migrate: %v\n%s", err, s)
 		}
-	}
-
-	// v3: Node management for WireGuard control plane
-	if currentVersion < 3 {
-		v3 := []string{
-			`ALTER TABLE agent_credential ADD COLUMN user_id INTEGER REFERENCES account(id)`,
-			`ALTER TABLE user_peer ADD COLUMN allowed_ips TEXT NOT NULL DEFAULT '10.0.0.0/24'`,
-			`ALTER TABLE user_peer ADD COLUMN persistent_keepalive INTEGER NOT NULL DEFAULT 0`,
-			`ALTER TABLE user_peer ADD COLUMN version INTEGER NOT NULL DEFAULT 1`,
-			`CREATE TABLE IF NOT EXISTS user_node (
-				id INTEGER PRIMARY KEY AUTOINCREMENT,
-				user_id INTEGER NOT NULL REFERENCES account(id),
-				label TEXT NOT NULL,
-				wg_pubkey TEXT NOT NULL,
-				wg_endpoint TEXT,
-				wg_listen_port INTEGER NOT NULL DEFAULT 51820,
-				allowed_ips TEXT NOT NULL DEFAULT '10.0.0.0/32',
-				persistent_keepalive INTEGER NOT NULL DEFAULT 25,
-				interface_name TEXT NOT NULL DEFAULT 'wg0',
-				agent_credential_id INTEGER REFERENCES agent_credential(id),
-				last_seen_at TEXT,
-				last_status TEXT,
-				created_at TEXT DEFAULT (datetime('now')),
-				updated_at TEXT DEFAULT (datetime('now')),
-				UNIQUE(user_id, label)
-			)`,
-			`CREATE INDEX IF NOT EXISTS idx_node_user ON user_node(user_id)`,
-			`CREATE INDEX IF NOT EXISTS idx_node_agent ON user_node(agent_credential_id)`,
-		}
-		for _, s := range v3 {
-			if _, err := store.Exec(s); err != nil {
-				log.Fatalf("migrate v3: %v\n%s", err, s)
-			}
-		}
-	}
-
-	// v4: STUN endpoint discovery source tracking
-	if currentVersion < 4 {
-		v4 := []string{
-			`ALTER TABLE user_node ADD COLUMN wg_endpoint_source TEXT NOT NULL DEFAULT 'manual'`,
-		}
-		for _, s := range v4 {
-			if _, err := store.Exec(s); err != nil {
-				log.Fatalf("migrate v4: %v\n%s", err, s)
-			}
-		}
-	}
-
-	// v5: Invite tokens for join flow
-	if currentVersion < 5 {
-		v5 := []string{
-			`CREATE TABLE IF NOT EXISTS invite_token (
-				id INTEGER PRIMARY KEY AUTOINCREMENT,
-				token_hash TEXT UNIQUE NOT NULL,
-				user_id INTEGER NOT NULL REFERENCES account(id),
-				created_at TEXT DEFAULT (datetime('now')),
-				expires_at TEXT NOT NULL,
-				used_at TEXT,
-				used_by_node_id INTEGER REFERENCES user_node(id)
-			)`,
-			`CREATE INDEX IF NOT EXISTS idx_invite_token_hash ON invite_token(token_hash)`,
-		}
-		for _, s := range v5 {
-			if _, err := store.Exec(s); err != nil {
-				log.Fatalf("migrate v5: %v\n%s", err, s)
-			}
-		}
-	}
-
-	// Record schema version (bump this number when adding migrations above)
-	const schemaVersion = 5
-	if currentVersion < schemaVersion {
-		store.Exec("INSERT OR IGNORE INTO schema_version (version) VALUES (?)", schemaVersion)
 	}
 }

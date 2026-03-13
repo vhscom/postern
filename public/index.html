@@ -679,23 +679,11 @@
                 }
             });
 
-            /* Handle 409 PEER_EXISTS — reveal confirm checkbox */
+            /* Reset form on success */
             apiConsole.addEventListener('api-response', (e) => {
-                const { status, body: data } = e.detail;
-                const confirmLabel = this.querySelector('.confirm-overwrite');
-                if (status === 409 && data?.code === 'PEER_EXISTS' && confirmLabel) {
-                    confirmLabel.hidden = false;
-                    return;
-                }
-
-                /* Reset form and hide confirm on success */
                 if (e.detail.ok) {
                     const form = this.querySelector('form');
                     if (form) form.reset();
-                    if (confirmLabel) {
-                        confirmLabel.hidden = true;
-                        confirmLabel.querySelector('input').checked = false;
-                    }
                 }
             });
         }

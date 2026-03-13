@@ -122,12 +122,6 @@ func runServe() {
 	mux.Handle("POST /account/password", passwordRL(requireAuthMiddleware(http.HandlerFunc(handlePasswordChange))))
 	mux.Handle("GET /account/me", requireAuthMiddleware(http.HandlerFunc(handleMe)))
 
-	// --- Peer config (authenticated, rate-limited) ---
-	peerRL := rateLimit(rateConfig{Window: time.Minute, Max: 30, Prefix: "rl:peer", KeyFunc: userKey})
-	mux.Handle("GET /account/peers", peerRL(requireAuthMiddleware(http.HandlerFunc(handlePeerList))))
-	mux.Handle("PUT /account/peers", peerRL(requireAuthMiddleware(http.HandlerFunc(handlePeerUpsert))))
-	mux.Handle("DELETE /account/peers/{label}", peerRL(requireAuthMiddleware(http.HandlerFunc(handlePeerDelete))))
-
 	// --- Node management (authenticated, rate-limited) ---
 	nodeRL := rateLimit(rateConfig{Window: time.Minute, Max: 30, Prefix: "rl:node", KeyFunc: userKey})
 	mux.Handle("GET /account/nodes", nodeRL(requireAuthMiddleware(http.HandlerFunc(handleNodeList))))

@@ -66,6 +66,39 @@ func jsonGet(url string, cookies []*http.Cookie) (*http.Response, map[string]any
 	return resp, result
 }
 
+func jsonPut(url string, body any, cookies []*http.Cookie) (*http.Response, map[string]any) {
+	b, _ := json.Marshal(body)
+	req, _ := http.NewRequest("PUT", url, bytes.NewReader(b))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	for _, c := range cookies {
+		req.AddCookie(c)
+	}
+	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}}
+	resp, _ := client.Do(req)
+	var result map[string]any
+	raw, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	json.Unmarshal(raw, &result)
+	return resp, result
+}
+
+func jsonDelete(url string, cookies []*http.Cookie) (*http.Response, map[string]any) {
+	req, _ := http.NewRequest("DELETE", url, nil)
+	req.Header.Set("Accept", "application/json")
+	for _, c := range cookies {
+		req.AddCookie(c)
+	}
+	resp, _ := http.DefaultClient.Do(req)
+	var result map[string]any
+	raw, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	json.Unmarshal(raw, &result)
+	return resp, result
+}
+
 func TestRegistrationAndLogin(t *testing.T) {
 	srv := setupTestServer(t)
 	defer srv.Close()
