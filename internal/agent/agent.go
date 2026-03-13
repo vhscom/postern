@@ -254,6 +254,8 @@ func runSession(ctx context.Context, cfg *config) error {
 	keyRotateTicker := time.NewTicker(1 * time.Hour)
 	defer keyRotateTicker.Stop()
 
+	keyRotateAck := make(chan bool, 1)
+
 	msgCh := make(chan wsMessage, 16)
 	errCh := make(chan error, 1)
 
@@ -281,7 +283,7 @@ func runSession(ctx context.Context, cfg *config) error {
 				rm.injectPacket(msg.data)
 				continue
 			}
-			if err := handleMessage(ctx, conn, cfg.Interface, msg.data, rm); err != nil {
+			if err := handleMessage(ctx, conn, cfg.Interface, msg.data, rm, keyRotateAck); err != nil {
 				log.Printf("handle message: %v", err)
 			}
 		case <-statusTicker.C:
@@ -303,7 +305,7 @@ func runSession(ctx context.Context, cfg *config) error {
 			}
 		case <-keyRotateTicker.C:
 			if caps["key_rotate"] && needsRotation() {
-				if err := rotateKey(ctx, conn, cfg.Interface); err != nil {
+				if err := rotateKey(ctx, conn, cfg.Interface, keyRotateAck); err != nil {
 					log.Printf("key rotation failed: %v", err)
 				}
 			}
@@ -350,7 +352,7 @@ func sendStatus(ctx context.Context, conn *websocket.Conn, status *interfaceStat
 	conn.Write(ctx, websocket.MessageText, data)
 }
 
-func handleMessage(ctx context.Context, conn *websocket.Conn, iface string, raw []byte, rm *relayManager) error {
+func handleMessage(ctx context.Context, conn *websocket.Conn, iface string, raw []byte, rm *relayManager, keyRotateAck chan<- bool) error {
 	var msg struct {
 		Type    string          `json:"type"`
 		ID      string          `json:"id"`
@@ -378,8 +380,9 @@ func handleMessage(ctx context.Context, conn *websocket.Conn, iface string, raw 
 			Success bool `json:"success"`
 		}
 		json.Unmarshal(msg.Payload, &p)
-		if p.Success {
-			log.Printf("key rotation acknowledged by server")
+		select {
+		case keyRotateAck <- p.Success:
+		default:
 		}
 	case "endpoint.discovered.result":
 		// acknowledgement — no action needed

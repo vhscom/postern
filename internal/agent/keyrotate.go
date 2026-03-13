@@ -76,8 +76,8 @@ func needsRotation() bool {
 }
 
 // rotateKey generates a new keypair, pushes the public key to the server,
-// applies the private key locally, and persists to disk.
-func rotateKey(ctx context.Context, conn *websocket.Conn, iface string) error {
+// waits for confirmation, then applies the private key locally and persists to disk.
+func rotateKey(ctx context.Context, conn *websocket.Conn, iface string, ack <-chan bool) error {
 	privKey, pubKey, err := wgkey.GenerateKeypair()
 	if err != nil {
 		return fmt.Errorf("generate keypair: %w", err)
@@ -93,6 +93,18 @@ func rotateKey(ctx context.Context, conn *websocket.Conn, iface string) error {
 	data, _ := json.Marshal(msg)
 	if err := conn.Write(ctx, websocket.MessageText, data); err != nil {
 		return fmt.Errorf("send key.rotate: %w", err)
+	}
+
+	// Wait for server confirmation before applying locally
+	select {
+	case ok := <-ack:
+		if !ok {
+			return fmt.Errorf("server rejected key rotation")
+		}
+	case <-time.After(10 * time.Second):
+		return fmt.Errorf("key rotation timed out waiting for server")
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 
 	// Apply new private key to WireGuard interface
