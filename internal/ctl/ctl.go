@@ -14,7 +14,6 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/coder/websocket"
 	"postern/internal/api"
-	"postern/internal/session"
 	"postern/internal/ui"
 )
 
@@ -161,7 +160,7 @@ type model struct {
 	state    state
 	cursor   int
 	action   action
-	input    session.InputBuffer
+	input    ui.InputBuffer
 	quitting bool
 
 	// multi-field input
