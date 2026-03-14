@@ -173,6 +173,7 @@ func runServe() {
 	})
 
 	// Control proxy routes
+	proxy := newProxy()
 	ops.Handle("/ops/control", cloakOps(requireAuthMiddleware(controlGuard(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
@@ -190,7 +191,7 @@ func runServe() {
 				newBridge().ServeHTTP(w, r)
 				return
 			}
-			newProxy().ServeHTTP(w, r)
+			proxy.ServeHTTP(w, r)
 		}),
 	))))
 

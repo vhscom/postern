@@ -1,61 +1,95 @@
 package main
 
 import (
-	"io"
+	"log"
 	"net/http"
+	"net/http/httputil"
 	"net/url"
 	"strings"
+	"time"
 )
 
+// hop-by-hop headers that must not be forwarded (RFC 7230 §6.1)
+var hopByHop = []string{
+	"Connection",
+	"Proxy-Connection",
+	"Keep-Alive",
+	"TE",
+	"Trailer",
+	"Transfer-Encoding",
+	"Upgrade",
+}
+
+// response headers that must not leak from upstream
+var stripResponseHeaders = []string{
+	"Set-Cookie",
+	"Server",
+	"X-Powered-By",
+}
+
+var proxyTransport = &http.Transport{
+	ResponseHeaderTimeout: 10 * time.Second,
+	IdleConnTimeout:       30 * time.Second,
+	TLSHandshakeTimeout:   5 * time.Second,
+	ExpectContinueTimeout: 1 * time.Second,
+}
+
 func newProxy() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if cfg.GatewayURL == "" {
-			http.NotFound(w, r)
-			return
-		}
-		target, err := url.Parse(cfg.GatewayURL)
-		if err != nil {
-			badGateway(w)
-			return
-		}
+	if cfg.GatewayURL == "" {
+		return http.NotFoundHandler()
+	}
+	target, err := url.Parse(cfg.GatewayURL)
+	if err != nil {
+		log.Fatalf("invalid GATEWAY_URL: %v", err)
+	}
 
-		u := *r.URL
-		u.Scheme = target.Scheme
-		u.Host = target.Host
-		u.Path = strings.TrimPrefix(u.Path, "/ops/control")
-		if u.Path == "" {
-			u.Path = "/"
-		}
+	rp := &httputil.ReverseProxy{
+		Transport: proxyTransport,
+		Rewrite: func(pr *httputil.ProxyRequest) {
+			pr.SetURL(target)
+			pr.Out.URL.Path = strings.TrimPrefix(pr.In.URL.Path, "/ops/control")
+			if pr.Out.URL.Path == "" {
+				pr.Out.URL.Path = "/"
+			}
+			pr.Out.Host = target.Host
 
-		req, err := http.NewRequestWithContext(r.Context(), r.Method, u.String(), r.Body)
-		if err != nil {
-			badGateway(w)
-			return
-		}
-		for k, vv := range r.Header {
-			req.Header[k] = vv
-		}
-		req.Header.Del("Cookie")
-		req.Header.Del("Authorization")
-		req.Host = target.Host
+			// Strip credentials — upstream must never see end-user auth
+			pr.Out.Header.Del("Cookie")
+			pr.Out.Header.Del("Authorization")
 
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			badGateway(w)
-			return
-		}
-		defer resp.Body.Close()
+			// Strip hop-by-hop headers
+			for _, h := range hopByHop {
+				pr.Out.Header.Del(h)
+			}
+			// Strip headers listed in Connection value
+			if conn := pr.In.Header.Get("Connection"); conn != "" {
+				for _, h := range strings.Split(conn, ",") {
+					pr.Out.Header.Del(strings.TrimSpace(h))
+				}
+			}
 
-		if resp.StatusCode >= 400 {
+			// Drop client-supplied forwarded headers (untrusted)
+			pr.Out.Header.Del("X-Forwarded-For")
+			pr.Out.Header.Del("X-Forwarded-Proto")
+			pr.Out.Header.Del("X-Forwarded-Host")
+			pr.Out.Header.Del("X-Real-IP")
+			pr.Out.Header.Del("Forwarded")
+
+			// Set trusted forwarded headers
+			pr.SetXForwarded()
+		},
+		ModifyResponse: func(resp *http.Response) error {
+			for _, h := range stripResponseHeaders {
+				resp.Header.Del(h)
+			}
+			return nil
+		},
+		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
+			log.Printf("[proxy] upstream error: %v", err)
 			badGateway(w)
-			return
-		}
-		for k, vv := range resp.Header {
-			w.Header()[k] = vv
-		}
-		w.WriteHeader(resp.StatusCode)
-		io.Copy(w, resp.Body)
-	})
+		},
+	}
+	return rp
 }
 
 func badGateway(w http.ResponseWriter) {
