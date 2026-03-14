@@ -179,6 +179,36 @@ make test           # run tests
 - Relay forwards opaque WireGuard-encrypted packets (zero knowledge)
 - Agent keys are 256-bit, hashed before storage
 
+## Security defaults
+
+Postern is secure by default. Several surfaces are intentionally hidden or restricted until you explicitly enable them:
+
+- **Ops surface returns 404** unless `AGENT_PROVISIONING_SECRET` is set. This is `cloakOps` — the entire `/ops/*` tree is invisible without it.
+- **Browser WebSocket is default-deny.** Connections with an `Origin` header are rejected unless the origin is listed in `WS_ALLOWED_ORIGINS`.
+- **Control proxy requires uid=1.** Only the first registered user (the operator) can access `/ops/control/*`. Optionally restricted further by `CONTROL_ALLOWED_IPS`.
+
+These are not bugs. If you're getting 404s or WebSocket disconnects, check the troubleshooting section below.
+
+## Troubleshooting
+
+**`GET /ops/*` returns 404**
+`AGENT_PROVISIONING_SECRET` is not set. The ops surface is cloaked when this variable is absent.
+
+**Control proxy (`/ops/control/`) returns 404**
+Either `AGENT_PROVISIONING_SECRET` is not set (ops is cloaked), or `GATEWAY_URL` / `GATEWAY_TOKEN` are not configured.
+
+**WebSocket disconnects with code 1006**
+Origin mismatch. `WS_ALLOWED_ORIGINS` must exactly match the origin your browser sends. If you open `http://localhost:8080` but your allowlist only has `http://127.0.0.1:8080`, the connection will be rejected. Include both if you use both:
+```
+WS_ALLOWED_ORIGINS=http://127.0.0.1:8080,http://localhost:8080
+```
+
+**Control proxy returns 404 but other ops routes work**
+You're not logged in as uid=1 (the first registered account), or your IP isn't in `CONTROL_ALLOWED_IPS` if that variable is set.
+
+**WebSocket connects but upstream doesn't respond**
+Check that `GATEWAY_TOKEN` matches what the upstream expects. Postern injects this token into the WebSocket `connect` frame — if it's wrong, the upstream will silently ignore the request.
+
 ## License
 
 AGPL-3.0 — see [COPYING](COPYING).
