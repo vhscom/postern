@@ -13,7 +13,7 @@ import (
 
 const (
 	maxMessageSize = 1 << 20 // 1 MB
-	rateMax        = 10      // messages per 1-second window
+	rateMax        = 100     // messages per 1-second window
 	idleTimeout    = 30 * time.Minute
 	dialTimeout    = 5 * time.Second
 	writeWait      = 10 * time.Second
