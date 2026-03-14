@@ -1641,6 +1641,9 @@ func Run() {
 	}
 	apiKey := os.Getenv("POSTERNCTL_API_KEY")
 	provSecret := os.Getenv("POSTERNCTL_PROVISIONING_SECRET")
+	if provSecret == "" {
+		provSecret = os.Getenv("AGENT_PROVISIONING_SECRET")
+	}
 
 	if apiURL == "" || apiKey == "" {
 		fmt.Fprintln(os.Stderr, "POSTERNCTL_ADDR and POSTERNCTL_API_KEY environment variables are required")
