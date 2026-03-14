@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"strings"
 	"sync"
@@ -114,6 +115,7 @@ func newBridge() http.Handler {
 		go func() {
 			defer func() { done <- struct{}{} }()
 			for {
+				backend.SetReadDeadline(time.Now().Add(idleTimeout))
 				mt, msg, err := backend.ReadMessage()
 				if err != nil {
 					return
@@ -181,6 +183,9 @@ func injectToken(raw []byte, token string) []byte {
 	params, _ := f["params"].(map[string]any)
 	if params == nil {
 		return raw
+	}
+	if _, exists := params["auth"]; exists {
+		log.Printf("[bridge] connect frame already contains auth field, overwriting")
 	}
 	params["auth"] = map[string]string{"token": token}
 	out, err := json.Marshal(f)
