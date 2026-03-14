@@ -56,6 +56,12 @@ func newBridge() http.Handler {
 		activeBridgeMu.Lock()
 		if prev := activeBridge; prev != nil {
 			closeBridgeWS(prev, codeSuperseded, "Superseded")
+			if claims != nil {
+				emitEvent("bridge.superseded", clientIP(r), claims.UID, r.UserAgent(), 0, map[string]any{
+					"session_id":  claims.SID,
+					"previous_ip": prev.RemoteAddr().String(),
+				})
+			}
 		}
 		activeBridge = client
 		activeBridgeMu.Unlock()

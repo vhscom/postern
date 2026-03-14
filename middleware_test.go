@@ -17,10 +17,10 @@ func TestSecurityHeaders(t *testing.T) {
 
 	expected := map[string]string{
 		"Strict-Transport-Security": "max-age=31536000; includeSubDomains",
-		"X-Frame-Options":          "DENY",
-		"X-Content-Type-Options":   "nosniff",
-		"Referrer-Policy":          "no-referrer",
-		"Cache-Control":            "no-store, max-age=0",
+		"X-Frame-Options":           "DENY",
+		"X-Content-Type-Options":    "nosniff",
+		"Referrer-Policy":           "no-referrer",
+		"Cache-Control":             "no-store, max-age=0",
 	}
 	for header, want := range expected {
 		got := rec.Header().Get(header)
