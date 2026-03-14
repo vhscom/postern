@@ -272,9 +272,6 @@ func loadConfig() *Config {
 		StripePriceProID:    os.Getenv("STRIPE_PRICE_PRO_ID"),
 		StripePriceTeamID:   os.Getenv("STRIPE_PRICE_TEAM_ID"),
 	}
-	if c.GatewayURL != "" && !isSafeURL(c.GatewayURL) {
-		log.Fatal("GATEWAY_URL blocked by SSRF check")
-	}
 	if ips := os.Getenv("CONTROL_ALLOWED_IPS"); ips != "" {
 		c.AllowedIPs = make(map[string]bool)
 		for _, ip := range strings.Split(ips, ",") {
