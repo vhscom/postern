@@ -3,10 +3,12 @@ package agent
 import (
 	"fmt"
 	"log"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 )
 
 // DefaultInterface returns the platform-appropriate default WireGuard interface name.
@@ -97,6 +99,9 @@ func ensureInterfaceDarwin(iface, keyPath string, listenPort int, meshIP string)
 
 		created := false
 		for _, name := range candidates {
+			// Clean up stale UAPI socket from previous runs
+			os.Remove(fmt.Sprintf("/var/run/wireguard/%s.sock", name))
+
 			out, err := exec.Command("wireguard-go", name).CombinedOutput()
 			if err == nil {
 				iface = name
@@ -115,8 +120,21 @@ func ensureInterfaceDarwin(iface, keyPath string, listenPort int, meshIP string)
 		}
 	}
 
-	if err := wgSetInterface(iface, keyPath, listenPort); err != nil {
-		return "", err
+	// wireguard-go needs a moment to initialize its UAPI socket
+	var setErr error
+	for tries := 0; tries < 5; tries++ {
+		if tries > 0 {
+			time.Sleep(200 * time.Millisecond)
+		}
+		setErr = wgSetInterface(iface, keyPath, listenPort)
+		if setErr == nil {
+			break
+		}
+	}
+	if setErr != nil {
+		// Clean up the interface we just created
+		exec.Command("rm", "-f", fmt.Sprintf("/var/run/wireguard/%s.sock", iface)).Run()
+		return "", setErr
 	}
 
 	// Assign mesh IP — strip /32 for ifconfig
