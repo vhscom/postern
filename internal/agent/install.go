@@ -130,6 +130,7 @@ func installLaunchd(params serviceParams) {
 	fmt.Printf("  Service: %s\n", launchdLabel)
 	fmt.Printf("  Plist:   %s\n", plistPath)
 	fmt.Printf("  Logs:    %s/postern-agent.log\n", params.LogDir)
+	fmt.Printf("  Uninstall: postern agent uninstall\n")
 }
 
 func installSystemd(params serviceParams) {
@@ -161,9 +162,10 @@ func installSystemd(params serviceParams) {
 	}
 
 	fmt.Printf("Agent installed and started\n")
-	fmt.Printf("  Unit:   %s\n", unitPath)
-	fmt.Printf("  Status: systemctl status postern-agent\n")
-	fmt.Printf("  Logs:   journalctl -u postern-agent -f\n")
+	fmt.Printf("  Unit:      %s\n", unitPath)
+	fmt.Printf("  Status:    systemctl status postern-agent\n")
+	fmt.Printf("  Logs:      journalctl -u postern-agent -f\n")
+	fmt.Printf("  Uninstall: postern agent uninstall\n")
 }
 
 func runUninstall() {

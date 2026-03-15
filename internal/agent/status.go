@@ -23,6 +23,7 @@ type agentStatus struct {
 	lastError string
 	events    []string // rolling log of recent events
 	hinted    bool     // true after the one-time next-steps hint has been shown
+	lastOut   string   // last rendered output, used to skip duplicate renders
 }
 
 var (
@@ -193,5 +194,10 @@ func (s *agentStatus) render() {
 		b.WriteString(fmt.Sprintf("    %s\n", okStyle.Render("postern agent install")))
 	}
 
-	fmt.Fprint(os.Stderr, b.String())
+	out := b.String()
+	if out == s.lastOut {
+		return
+	}
+	s.lastOut = out
+	fmt.Fprint(os.Stderr, out)
 }
