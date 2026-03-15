@@ -185,29 +185,9 @@ func handleWSRevokeSession(conn *wsConn, id string, payload json.RawMessage, age
 	}
 	json.Unmarshal(payload, &p)
 
-	var res int64
-	switch p.Scope {
-	case "all":
-		r, _ := store.Exec("UPDATE session SET expires_at = datetime('now') WHERE expires_at > datetime('now')")
-		res, _ = r.RowsAffected()
-	case "user":
-		uid, ok := numericID(p.TargetID)
-		if !ok {
-			sendWSError(conn, id, "INVALID_ID", "User ID required")
-			return
-		}
-		r, _ := store.Exec("UPDATE session SET expires_at = datetime('now') WHERE user_id = ? AND expires_at > datetime('now')", uid)
-		res, _ = r.RowsAffected()
-	case "session":
-		sid, ok := p.TargetID.(string)
-		if !ok || sid == "" {
-			sendWSError(conn, id, "INVALID_ID", "Session ID required")
-			return
-		}
-		r, _ := store.Exec("UPDATE session SET expires_at = datetime('now') WHERE id = ?", sid)
-		res, _ = r.RowsAffected()
-	default:
-		sendWSError(conn, id, "INVALID_SCOPE", "Scope must be all, user, or session")
+	res, code, msg := revokeSessions(p.Scope, p.TargetID)
+	if code != "" {
+		sendWSError(conn, id, code, msg)
 		return
 	}
 

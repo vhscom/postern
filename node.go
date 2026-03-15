@@ -148,7 +148,7 @@ func handleNodeCreate(w http.ResponseWriter, r *http.Request) {
 		EndpointSource: endpointSource,
 	})
 	if err != nil {
-		if strings.Contains(err.Error(), "UNIQUE") {
+		if isUniqueViolation(err) {
 			respondError(w, r, http.StatusConflict, "NODE_EXISTS", "Node with this label already exists")
 			return
 		}

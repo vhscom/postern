@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 )
 
@@ -64,29 +63,9 @@ func handleOpsSessionRevoke(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var res int64
-	switch body.Scope {
-	case "all":
-		r, _ := store.Exec("UPDATE session SET expires_at = datetime('now') WHERE expires_at > datetime('now')")
-		res, _ = r.RowsAffected()
-	case "user":
-		id, ok := numericID(body.ID)
-		if !ok {
-			jsonError(w, 400, "INVALID_ID", "User ID required")
-			return
-		}
-		r, _ := store.Exec("UPDATE session SET expires_at = datetime('now') WHERE user_id = ? AND expires_at > datetime('now')", id)
-		res, _ = r.RowsAffected()
-	case "session":
-		sid, ok := body.ID.(string)
-		if !ok || sid == "" {
-			jsonError(w, 400, "INVALID_ID", "Session ID required")
-			return
-		}
-		r, _ := store.Exec("UPDATE session SET expires_at = datetime('now') WHERE id = ?", sid)
-		res, _ = r.RowsAffected()
-	default:
-		jsonError(w, 400, "INVALID_SCOPE", "Scope must be all, user, or session")
+	res, code, msg := revokeSessions(body.Scope, body.ID)
+	if code != "" {
+		jsonError(w, 400, code, msg)
 		return
 	}
 
@@ -128,7 +107,7 @@ func handleOpsAgentCreate(w http.ResponseWriter, r *http.Request) {
 		body.Name, keyHash, body.TrustLevel, body.Description,
 	)
 	if err != nil {
-		if strings.Contains(err.Error(), "UNIQUE") {
+		if isUniqueViolation(err) {
 			jsonError(w, 409, "AGENT_EXISTS", "Agent name already exists")
 			return
 		}

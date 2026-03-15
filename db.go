@@ -3,9 +3,15 @@ package main
 import (
 	"database/sql"
 	"log"
+	"strings"
 
 	_ "modernc.org/sqlite"
 )
+
+// isUniqueViolation checks whether an error is a SQLite UNIQUE constraint failure.
+func isUniqueViolation(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "UNIQUE")
+}
 
 var store *sql.DB
 

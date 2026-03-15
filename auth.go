@@ -21,7 +21,7 @@ func handleRegister(w http.ResponseWriter, r *http.Request) {
 	domain := maskEmail(email)
 	_, err = store.Exec("INSERT INTO account (email, password_data) VALUES (?,?)", email, hash)
 	if err != nil {
-		if strings.Contains(err.Error(), "UNIQUE") {
+		if isUniqueViolation(err) {
 			emitEvent("registration.failure", clientIP(r), 0, r.UserAgent(), 409, map[string]any{"email": domain})
 		} else {
 			logError("registration.insert", err)
