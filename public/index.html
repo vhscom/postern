@@ -4,8 +4,8 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Auth Demo — Postern</title>
-    <meta name="description" content="Single-binary auth server with edge config management, adaptive PoW, and an optional control proxy.">
+    <title>Postern</title>
+    <meta name="description" content="WireGuard mesh automation you own completely, in a single binary.">
     <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
     <meta name="theme-color" content="#050a10" media="(prefers-color-scheme: dark)">
     <meta name="theme-color" content="#f5f7fa" media="(prefers-color-scheme: light)">
@@ -20,6 +20,7 @@
             --color-accent-glow: rgb(0 229 204 / 0.35);
             --color-danger: #f85149;
             --color-ok: #3fb950;
+            --color-warn: #d29922;
             --color-console-bg: #111827;
             --color-console-border: rgb(136 146 176 / 0.15);
             --color-console-text: #f0f4ff;
@@ -43,6 +44,7 @@
                 --color-accent-glow: rgb(13 148 133 / 0.25);
                 --color-danger: #dc2626;
                 --color-ok: #16a34a;
+                --color-warn: #ca8a04;
                 --color-console-bg: #1e293b;
                 --color-console-border: rgb(26 35 50 / 0.15);
                 --color-console-text: #e2e8f0;
@@ -187,6 +189,98 @@
                 color: #dc2626;
                 border-color: rgb(239 68 68 / 0.2);
             }
+        }
+
+        .node-table {
+            width: 100%;
+            font-size: 0.8rem;
+            border-collapse: collapse;
+            margin-block-end: var(--space-sm);
+        }
+        .node-table th {
+            text-align: left;
+            color: var(--color-muted);
+            font-weight: normal;
+            padding: 0.3rem 0.5rem;
+            border-bottom: 1px solid var(--color-border);
+        }
+        .node-table td {
+            padding: 0.4rem 0.5rem;
+        }
+        .status-online { color: var(--color-ok); }
+        .status-idle { color: var(--color-warn); }
+        .status-offline { color: var(--color-danger); }
+
+        .tier-info {
+            font-size: 0.8rem;
+            color: var(--color-muted);
+            margin-block-end: var(--space-sm);
+        }
+        .tier-info strong {
+            color: var(--color-accent);
+            font-weight: normal;
+        }
+
+        .invite-result {
+            margin-block-start: var(--space-sm);
+        }
+        .invite-command {
+            display: block;
+            padding: 0.5rem 0.75rem;
+            background: var(--color-console-bg);
+            border: 1px solid var(--color-console-border);
+            border-radius: 6px;
+            font-family: var(--font-mono);
+            font-size: 0.8rem;
+            color: var(--color-console-text);
+            word-break: break-all;
+            margin: var(--space-xs) 0;
+            cursor: pointer;
+            transition: border-color 0.2s ease;
+        }
+        .invite-command:hover {
+            border-color: var(--color-accent);
+        }
+        .invite-hint {
+            font-size: 0.75rem;
+            color: var(--color-muted);
+        }
+        .copied-msg {
+            font-size: 0.75rem;
+            color: var(--color-ok);
+            display: none;
+        }
+
+        .cli-hint {
+            font-size: 0.8rem;
+            color: var(--color-muted);
+            margin-block-start: var(--space-sm);
+            padding: 0.5rem 0.75rem;
+            background: var(--color-console-bg);
+            border: 1px solid var(--color-console-border);
+            border-radius: 6px;
+        }
+        .cli-hint code {
+            color: var(--color-accent);
+        }
+
+        .node-delete-btn {
+            min-height: auto;
+            padding: 0.15rem 0.5rem;
+            font-size: 0.75rem;
+            color: var(--color-muted);
+            border-color: var(--color-border);
+        }
+        .node-delete-btn:hover {
+            color: var(--color-danger);
+            border-color: var(--color-danger);
+            background: rgb(248 81 73 / 0.08);
+        }
+
+        .empty-state {
+            color: var(--color-muted);
+            font-size: 0.85rem;
+            padding: var(--space-sm) 0;
         }
 
         @media (prefers-reduced-motion: reduce) {
@@ -361,7 +455,7 @@
                 <h1>Postern</h1>
                 <span class="auth-status unauthenticated" aria-live="polite">-- unauthenticated</span>
             </div>
-            <nav class="tab-bar" role="tablist" aria-label="Authentication steps"></nav>
+            <nav class="tab-bar" role="tablist" aria-label="Navigation"></nav>
         </header>
         <div class="panels"></div>
     </div>
@@ -374,18 +468,17 @@
 <main>
 <h1 class="no-js-title">Postern</h1>
 
-<p id="registered" class="status-msg success">Account created successfully. Log in below.</p>
-<p id="logged-in" class="status-msg success">Logged in successfully.</p>
+<p id="registered" class="status-msg success">Account created. Log in below.</p>
+<p id="logged-in" class="status-msg success">Logged in.</p>
 <p id="password-changed" class="status-msg success">Password changed. Please log in again.</p>
-<p id="logged-out" class="status-msg success">Logged out successfully.</p>
+<p id="logged-out" class="status-msg success">Logged out.</p>
 <p id="error" class="status-msg error">Something went wrong. Please try again.</p>
 
 <auth-wizard>
     <auth-step label="Register" method="POST" path="/auth/register">
         <p class="step-description">
-            Create an account with any email and password (8&ndash;64 chars, no complexity
-            rules). No email is sent. Passwords are hashed with PBKDF2-SHA384
-            and 128-bit salts before storage.
+            Create an account. No email is sent &mdash; pick any address and a
+            password (8&ndash;64 chars).
         </p>
         <form action="/auth/register" method="post">
             <label>
@@ -402,9 +495,7 @@
 
     <auth-step label="Login" method="POST" path="/auth/login">
         <p class="step-description">
-            Authenticate with your credentials. On success, the server issues a 15-minute
-            access token and a 7-day refresh token as HttpOnly cookies, linked to a
-            server-side session.
+            Sign in with your credentials.
         </p>
         <form action="/auth/login" method="post">
             <label>
@@ -419,11 +510,33 @@
         </form>
     </auth-step>
 
-    <auth-step label="Password" method="POST" path="/account/password">
+    <auth-step label="Mesh" method="GET" path="/account/nodes" id="mesh-step">
         <p class="step-description">
-            Change your password. The current password is re-verified, a full PBKDF2 rehash
-            is performed with a fresh salt, and all sessions are revoked &mdash; you'll
-            need to log in again afterward.
+            Your mesh nodes and their current status.
+        </p>
+        <div id="mesh-content">
+            <button type="button" data-action="probe">Load Mesh</button>
+        </div>
+    </auth-step>
+
+    <auth-step label="Invite" method="POST" path="/account/nodes/invite" id="invite-step" hide-console>
+        <p class="step-description">
+            Generate a single-use token to add a machine to your mesh.
+            Tokens expire after 24 hours.
+        </p>
+        <button type="button" id="create-invite-btn" data-action="invoke-invite">Create Invite</button>
+        <div id="invite-result" class="invite-result" hidden>
+            <p class="step-description">Run this on the new machine:</p>
+            <code id="invite-command" class="invite-command" title="Click to copy"></code>
+            <span class="invite-hint">Click to copy. Token expires in 24 hours.</span>
+            <span id="copied-msg" class="copied-msg">Copied!</span>
+        </div>
+    </auth-step>
+
+    <auth-step label="Account" method="POST" path="/account/password" id="account-step">
+        <p class="step-description">
+            Change your password. All sessions will be revoked &mdash;
+            you'll need to log in again.
         </p>
         <form action="/account/password" method="post">
             <label>
@@ -436,47 +549,25 @@
             </label>
             <button type="submit">Change Password</button>
         </form>
-    </auth-step>
 
-    <auth-step label="Nodes" method="GET" path="/account/nodes">
-        <p class="step-description">
-            View your mesh nodes and tier limits. Each node is a machine running the
-            postern agent with its own WireGuard keypair. Free tier allows 2 nodes.
-        </p>
-        <button type="button" data-action="probe">Load Nodes</button>
-    </auth-step>
+        <hr style="border: none; border-top: 1px solid var(--color-border); margin: var(--space-md) 0;">
 
-    <auth-step label="Add Node" method="POST" path="/account/nodes">
         <p class="step-description">
-            Register a new node in the mesh. The server returns an API key for the
-            agent. In practice, use <code style="color:var(--color-accent)">postern node add</code>
-            which generates the keypair and writes the agent config automatically.
+            Permanently delete your account and all associated data
+            (nodes, invites, sessions). This cannot be undone.
         </p>
-        <form>
+        <form id="delete-account-form">
             <label>
-                Label:
-                <input type="text" name="label" placeholder="gateway-nyc" pattern="[a-zA-Z0-9\-]{1,32}" autocomplete="off" required>
+                Confirm password:
+                <input type="password" name="password" autocomplete="current-password" required>
             </label>
-            <label>
-                WireGuard Public Key:
-                <input type="text" name="wg_pubkey" placeholder="xTIBA5rboUvnH4hto..." autocomplete="off" required>
-            </label>
-            <label>
-                Mesh IP:
-                <input type="text" name="allowed_ips" placeholder="10.0.0.1/32" autocomplete="off" required>
-            </label>
-            <label>
-                Endpoint (optional):
-                <input type="text" name="wg_endpoint" placeholder="1.2.3.4:51820" autocomplete="off">
-            </label>
-            <button type="submit">Add Node</button>
+            <button type="submit" class="logout-button">Delete Account</button>
         </form>
     </auth-step>
 
     <auth-step label="Logout" method="POST" path="/auth/logout">
         <p class="step-description">
-            End your session and clear authentication tokens. The server-side session
-            record is terminated, and both cookies are removed.
+            End your session.
         </p>
         <form action="/auth/logout" method="post">
             <button type="submit" class="logout-button">Log Out</button>
@@ -662,6 +753,10 @@
             apiConsole.setAttribute('path', path);
             apiConsole._cmd.textContent = `${method} ${path} `;
 
+            if (this.hasAttribute('hide-console')) {
+                apiConsole.style.display = 'none';
+            }
+
             /* Intercept form submissions from slotted content */
             this.addEventListener('submit', (e) => {
                 e.preventDefault();
@@ -690,6 +785,201 @@
     }
 
     customElements.define('auth-step', AuthStep);
+
+    /* ------------------------------------------ */
+    /* Mesh node rendering                        */
+    /* ------------------------------------------ */
+
+    function renderMeshContent(data) {
+        const container = document.getElementById('mesh-content');
+        if (!data || !data.nodes) return;
+
+        const nodes = data.nodes;
+        const tier = data.tier || 'free';
+        const limit = data.limit || 2;
+
+        let html = '';
+
+        /* Tier info */
+        html += `<div class="tier-info"><strong>${tier}</strong> tier &mdash; ${nodes.length} / ${limit} nodes</div>`;
+
+        if (nodes.length === 0) {
+            html += '<div class="empty-state">No nodes yet. Add one from the command line:</div>';
+            html += '<div class="cli-hint"><code>postern node add --label my-node</code></div>';
+        } else {
+            /* Node table */
+            html += '<table class="node-table"><thead><tr>';
+            html += '<th>Label</th><th>Mesh IP</th><th>Endpoint</th><th>Status</th><th></th>';
+            html += '</tr></thead><tbody>';
+            for (const n of nodes) {
+                const ep = n.wg_endpoint || '--';
+                const status = n.status || 'offline';
+                const cls = `status-${status}`;
+                html += `<tr>`;
+                html += `<td>${esc(n.label)}</td>`;
+                html += `<td>${esc(n.allowed_ips)}</td>`;
+                html += `<td>${esc(ep)}</td>`;
+                html += `<td class="${cls}">${status}</td>`;
+                html += `<td><button class="node-delete-btn" data-label="${esc(n.label)}">remove</button></td>`;
+                html += `</tr>`;
+            }
+            html += '</tbody></table>';
+
+            if (nodes.length < limit) {
+                html += '<div class="cli-hint">Add a node: <code>postern node add --label name</code><br>Or invite a machine: use the <strong>Invite</strong> tab</div>';
+            }
+        }
+
+        /* Reload button */
+        html += `<button type="button" data-action="probe" style="margin-block-start: var(--space-sm)">Reload</button>`;
+
+        container.innerHTML = html;
+    }
+
+    function esc(s) {
+        const d = document.createElement('div');
+        d.textContent = s;
+        return d.innerHTML;
+    }
+
+    /* Listen for mesh data */
+    document.addEventListener('api-response', (e) => {
+        if (e.detail.path === '/account/nodes' && e.detail.ok) {
+            renderMeshContent(e.detail.body);
+        }
+    });
+
+    /* Node deletion */
+    document.addEventListener('click', async (e) => {
+        const btn = e.target.closest('.node-delete-btn');
+        if (!btn) return;
+        const label = btn.dataset.label;
+        if (!confirm(`Remove node "${label}" from the mesh?`)) return;
+
+        btn.textContent = '...';
+        btn.disabled = true;
+        try {
+            const res = await fetch(`/account/nodes/${encodeURIComponent(label)}`, {
+                method: 'DELETE',
+                headers: { 'Accept': 'application/json' }
+            });
+            if (res.ok) {
+                /* Reload mesh */
+                const meshStep = document.getElementById('mesh-step');
+                if (meshStep) {
+                    const console = meshStep.shadowRoot?.querySelector('api-console');
+                    if (console) console.execute();
+                }
+            } else {
+                const data = await res.json();
+                alert(data.error || 'Failed to remove node');
+                btn.textContent = 'remove';
+                btn.disabled = false;
+            }
+        } catch {
+            alert('Network error');
+            btn.textContent = 'remove';
+            btn.disabled = false;
+        }
+    });
+
+    /* ------------------------------------------ */
+    /* Invite flow                                */
+    /* ------------------------------------------ */
+
+    document.addEventListener('click', async (e) => {
+        /* Create invite */
+        if (e.target.closest('[data-action="invoke-invite"]')) {
+            const btn = e.target.closest('[data-action="invoke-invite"]');
+            btn.textContent = 'Creating...';
+            btn.disabled = true;
+
+            try {
+                const res = await fetch('/account/nodes/invite', {
+                    method: 'POST',
+                    headers: { 'Accept': 'application/json' }
+                });
+                const data = await res.json();
+
+                if (res.ok && data.join_command) {
+                    const resultEl = document.getElementById('invite-result');
+                    const cmdEl = document.getElementById('invite-command');
+                    cmdEl.textContent = data.join_command;
+                    resultEl.hidden = false;
+                    btn.textContent = 'Create Another';
+                    btn.disabled = false;
+
+                    /* Also fire api-response for the console */
+                    const step = document.getElementById('invite-step');
+                    if (step) {
+                        const console = step.shadowRoot?.querySelector('api-console');
+                        if (console) {
+                            console.dispatchEvent(new CustomEvent('api-response', {
+                                bubbles: true, composed: true,
+                                detail: { status: res.status, ok: true, body: data, path: '/account/nodes/invite' }
+                            }));
+                        }
+                    }
+                } else {
+                    const msg = data.error || 'Failed to create invite';
+                    btn.textContent = msg;
+                    btn.disabled = false;
+                    setTimeout(() => { btn.textContent = 'Create Invite'; }, 3000);
+                }
+            } catch {
+                btn.textContent = 'Network error';
+                btn.disabled = false;
+                setTimeout(() => { btn.textContent = 'Create Invite'; }, 3000);
+            }
+        }
+
+        /* Copy invite command */
+        const cmdEl = e.target.closest('.invite-command');
+        if (cmdEl) {
+            try {
+                await navigator.clipboard.writeText(cmdEl.textContent);
+                const msg = document.getElementById('copied-msg');
+                if (msg) {
+                    msg.style.display = 'inline';
+                    setTimeout(() => { msg.style.display = 'none'; }, 2000);
+                }
+            } catch { /* clipboard not available */ }
+        }
+    });
+
+    /* ------------------------------------------ */
+    /* Account deletion                           */
+    /* ------------------------------------------ */
+
+    document.addEventListener('DOMContentLoaded', () => {
+        const form = document.getElementById('delete-account-form');
+        if (!form) return;
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const password = form.querySelector('input[name="password"]').value;
+            if (!password) return;
+
+            if (!confirm('Are you sure? This will permanently delete your account and all nodes.')) return;
+
+            try {
+                const res = await fetch('/account', {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                    body: JSON.stringify({ password })
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    location.href = '/';
+                } else {
+                    alert(data.error || 'Deletion failed');
+                }
+            } catch {
+                alert('Network error');
+            }
+        });
+    });
 
     /* ------------------------------------------ */
     /* <auth-wizard>                               */
@@ -817,6 +1107,15 @@
             /* Slide indicator */
             this._positionIndicator(index);
             this._activeIndex = index;
+
+            /* Auto-load mesh when switching to that tab */
+            if (index === 2 && this._authState === 'authenticated') {
+                const meshStep = this.querySelectorAll('auth-step')[2];
+                if (meshStep) {
+                    const console = meshStep.shadowRoot?.querySelector('api-console');
+                    if (console) console.execute();
+                }
+            }
         }
 
         _positionIndicator(index) {
@@ -881,8 +1180,13 @@
                 this._statusEl.textContent = `-- ${newState}`;
                 this._statusEl.className = `auth-status ${newState}`;
 
-                if (newState === 'authenticated' && this._returnTo) {
-                    location.href = this._returnTo;
+                if (newState === 'authenticated') {
+                    if (this._returnTo) {
+                        location.href = this._returnTo;
+                    } else {
+                        /* Auto-navigate to mesh on login */
+                        this.switchTab(2);
+                    }
                 }
             }
         }
