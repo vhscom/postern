@@ -813,8 +813,8 @@
         html += `<div class="tier-info"><strong>${tier}</strong> tier &mdash; ${nodes.length} / ${limit} nodes</div>`;
 
         if (nodes.length === 0) {
-            html += '<div class="empty-state">No nodes yet. Add one from the command line:</div>';
-            html += '<div class="cli-hint"><code>postern node add --label my-node</code></div>';
+            html += '<div class="empty-state">No nodes yet.</div>';
+            html += '<div class="cli-hint">Create an invite from the <strong>Invite</strong> tab, or node from the CLI:<br><code>postern node add --help</code></div>';
         } else {
             /* Node table */
             html += '<table class="node-table"><thead><tr>';

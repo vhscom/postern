@@ -151,18 +151,20 @@ postern
 ## Docker
 
 ```bash
-# Generate config first
-postern init
-
-docker build -t postern .
-docker run -p 8080:8080 \
-  --env-file .env \
-  -v $(pwd)/data:/data \
-  -e DB_PATH=/data/postern.db \
-  postern
+postern init              # generate .env
+docker compose up -d      # build and start
+docker compose logs -f    # tail logs
 ```
 
-The volume mount keeps the database across container restarts.
+The compose file persists the database in a named volume. Edit `.env` before starting — see the environment variables table above.
+
+For production behind Cloudflare or a reverse proxy, set:
+
+```
+ENVIRONMENT=production
+BASE_URL=https://yourdomain.com
+WS_ALLOWED_ORIGINS=https://yourdomain.com
+```
 
 ## Build
 
