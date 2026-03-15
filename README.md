@@ -14,8 +14,10 @@ Stop hand-editing WireGuard configs across 6 machines. Postern puts an agent on 
 postern init
 postern serve
 
-# Add your first node
+# Register and log in (register via web UI at http://localhost:8080, then:)
 postern login http://localhost:8080
+
+# Add your first node
 postern node add --label gateway
 
 # Invite another machine
@@ -89,6 +91,7 @@ Tailscale has clients. Postern has agents. A client follows instructions. An age
 **Account** (authenticated)
 - `GET /account/me` — Current user info
 - `POST /account/password` — Change password (revokes all sessions)
+- `DELETE /account` — Delete account and all associated data
 - `GET /account/nodes` — List nodes
 - `POST /account/nodes` — Create node (generates agent key + mesh IP)
 - `PUT /account/nodes/{label}` — Update node

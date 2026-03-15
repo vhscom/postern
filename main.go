@@ -139,6 +139,7 @@ func runServe() {
 
 	// --- Account management (authenticated) ---
 	mux.Handle("POST /account/password", passwordRL(requireAuthMiddleware(http.HandlerFunc(handlePasswordChange))))
+	mux.Handle("DELETE /account", requireAuthMiddleware(http.HandlerFunc(handleAccountDelete)))
 	mux.Handle("GET /account/me", requireAuthMiddleware(http.HandlerFunc(handleMe)))
 
 	// --- Node management (authenticated, rate-limited) ---

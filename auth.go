@@ -136,6 +136,59 @@ func handlePasswordChange(w http.ResponseWriter, r *http.Request) {
 	respondSuccess(w, r, http.StatusOK, "Password changed", "/#password-changed")
 }
 
+// DELETE /account
+func handleAccountDelete(w http.ResponseWriter, r *http.Request) {
+	claims := getClaims(r)
+
+	if claims.UID == 1 {
+		respondError(w, r, http.StatusForbidden, "FORBIDDEN", "Operator account cannot be deleted")
+		return
+	}
+
+	password := ""
+	ct := r.Header.Get("Content-Type")
+	if strings.Contains(ct, "application/json") {
+		var body struct {
+			Password string `json:"password"`
+		}
+		json.NewDecoder(r.Body).Decode(&body)
+		password = body.Password
+	} else {
+		r.ParseForm()
+		password = r.FormValue("password")
+	}
+
+	if password == "" {
+		respondError(w, r, http.StatusBadRequest, "VALIDATION_ERROR", "Password required")
+		return
+	}
+
+	var storedHash string
+	err := store.QueryRow("SELECT password_data FROM account WHERE id = ?", claims.UID).Scan(&storedHash)
+	if err != nil {
+		respondError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Account deletion failed")
+		return
+	}
+	if !verifyPassword(password, storedHash) {
+		respondError(w, r, http.StatusUnauthorized, "INVALID_CREDENTIALS", "Incorrect password")
+		return
+	}
+
+	// Cascade cleanup
+	store.Exec("DELETE FROM invite_token WHERE user_id = ?", claims.UID)
+	store.Exec("DELETE FROM subscription_history WHERE user_id = ?", claims.UID)
+	store.Exec("DELETE FROM user_subscription WHERE user_id = ?", claims.UID)
+	store.Exec("DELETE FROM user_node WHERE user_id = ?", claims.UID)
+	store.Exec("DELETE FROM agent_credential WHERE user_id = ?", claims.UID)
+	store.Exec("DELETE FROM session WHERE user_id = ?", claims.UID)
+	store.Exec("DELETE FROM security_event WHERE user_id = ?", claims.UID)
+	store.Exec("DELETE FROM account WHERE id = ?", claims.UID)
+
+	clearTokenCookies(w)
+	emitEvent("account.deleted", clientIP(r), claims.UID, r.UserAgent(), 200, nil)
+	respondSuccess(w, r, http.StatusOK, "Account deleted", "/")
+}
+
 // GET /account/me
 func handleMe(w http.ResponseWriter, r *http.Request) {
 	claims := getClaims(r)
