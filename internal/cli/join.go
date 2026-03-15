@@ -32,6 +32,8 @@ func RunJoin() {
 		case (os.Args[i] == "--label" || os.Args[i] == "-l") && i+1 < len(os.Args):
 			i++
 			label = os.Args[i]
+		case os.Args[i] == "--no-agent":
+			// handled by main
 		case os.Args[i] == "--help" || os.Args[i] == "-h":
 			printJoinUsage()
 			return
@@ -117,9 +119,6 @@ func RunJoin() {
 	fmt.Printf("  Mesh IP:     %s\n", meshIP)
 	fmt.Printf("  Public key:  %s\n", pubKey)
 	fmt.Printf("  Config:      %s\n", cfgPath)
-	fmt.Println()
-	fmt.Println("Start the agent:")
-	fmt.Printf("  postern agent\n")
 }
 
 func printJoinUsage() {
@@ -129,6 +128,7 @@ func printJoinUsage() {
 	fmt.Println()
 	printHeading("Options")
 	printFlag("--label <name>", "Node name (default: hostname)")
+	printFlag("--no-agent", "Don't start the agent after joining")
 	fmt.Println()
 	printHeading("Example")
 	fmt.Printf("  %s\n", cmdStyle.Render("postern join https://postern.example.com abc123def"))

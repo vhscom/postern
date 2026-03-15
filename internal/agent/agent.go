@@ -48,6 +48,8 @@ func Run() {
 		}
 	}
 
+	checkWireGuardTools()
+
 	cfg := loadConfig()
 	log.Printf("postern agent: server=%s interface=%s", cfg.Server, cfg.Interface)
 

@@ -47,6 +47,10 @@ var version = "dev"
 func main() {
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
+		case "init":
+			os.Args = os.Args[1:]
+			cli.RunInit()
+			return
 		case "serve":
 			os.Args = os.Args[1:]
 			runServe()
@@ -73,7 +77,22 @@ func main() {
 			return
 		case "join":
 			os.Args = os.Args[1:]
+			noAgent := false
+			for _, arg := range os.Args {
+				if arg == "--no-agent" {
+					noAgent = true
+					break
+				}
+			}
 			cli.RunJoin()
+			// RunJoin calls os.Exit on failure, so reaching here means success
+			if !noAgent {
+				fmt.Println()
+				fmt.Println("Starting agent...")
+				fmt.Println()
+				os.Args = []string{"postern"}
+				agent.Run()
+			}
 			return
 		case "--version", "-v", "version":
 			fmt.Println("postern " + version)
