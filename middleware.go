@@ -302,7 +302,7 @@ func controlGuard(next http.Handler) http.Handler {
 			return
 		}
 		if len(cfg.AllowedIPs) > 0 {
-			if !cfg.AllowedIPs[clientIP(r)] {
+			if !cfg.AllowedIPs[connIP(r)] {
 				http.NotFound(w, r)
 				return
 			}

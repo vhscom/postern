@@ -189,6 +189,16 @@ func clearTokenCookies(w http.ResponseWriter) {
 
 // --- IP helpers ---
 
+// connIP returns the IP from the TCP connection (RemoteAddr), ignoring
+// forwarded headers. Use for security-critical checks like IP allowlists.
+func connIP(r *http.Request) string {
+	host := r.RemoteAddr
+	if i := strings.LastIndex(host, ":"); i >= 0 {
+		host = host[:i]
+	}
+	return host
+}
+
 func clientIP(r *http.Request) string {
 	if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
 		if i := strings.Index(fwd, ","); i > 0 {

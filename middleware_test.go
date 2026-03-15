@@ -177,6 +177,17 @@ func TestControlGuardIPAllowlist(t *testing.T) {
 	if rec.Code != 404 {
 		t.Errorf("expected 404 for blocked IP, got %d", rec.Code)
 	}
+
+	// Spoofed X-Forwarded-For must not bypass allowlist
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest("GET", "/ops/control", nil)
+	req.RemoteAddr = "99.99.99.99:12345"
+	req.Header.Set("X-Forwarded-For", "10.0.0.1")
+	ctx = context.WithValue(req.Context(), ctxClaims, &TokenClaims{UID: 1, SID: "s"})
+	handler.ServeHTTP(rec, req.WithContext(ctx))
+	if rec.Code != 404 {
+		t.Errorf("expected 404 for spoofed X-Forwarded-For, got %d", rec.Code)
+	}
 }
 
 func TestCloakOpsHidesWhenDisabled(t *testing.T) {
