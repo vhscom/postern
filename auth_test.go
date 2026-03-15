@@ -30,6 +30,7 @@ func setupTestServer(t *testing.T) *httptest.Server {
 	mux.Handle("POST /auth/logout", requireAuthMiddleware(http.HandlerFunc(handleLogout)))
 	mux.Handle("POST /account/password", requireAuthMiddleware(http.HandlerFunc(handlePasswordChange)))
 	mux.Handle("GET /account/me", requireAuthMiddleware(http.HandlerFunc(handleMe)))
+	mux.Handle("DELETE /account", requireAuthMiddleware(http.HandlerFunc(handleAccountDelete)))
 	return httptest.NewServer(mux)
 }
 
@@ -284,6 +285,103 @@ func TestContentNegotiation(t *testing.T) {
 	if resp.StatusCode != 302 {
 		t.Errorf("expected redirect (302), got %d", resp.StatusCode)
 	}
+}
+
+func TestHealthEndpoint(t *testing.T) {
+	srv := setupTestServer(t)
+	defer srv.Close()
+
+	resp, result := jsonGet(srv.URL+"/health", nil)
+	if resp.StatusCode != 200 {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	if result["status"] != "ok" {
+		t.Errorf("status = %v, want ok", result["status"])
+	}
+}
+
+func TestAccountDeleteBlocksOperator(t *testing.T) {
+	srv := setupTestServer(t)
+	defer srv.Close()
+
+	// First registered user is uid=1 (operator)
+	cookies := registerAndLogin(t, srv, "operator@test.com", "password123")
+	resp, result := jsonDeleteBody(srv.URL+"/account", map[string]string{"password": "password123"}, cookies)
+	if resp.StatusCode != 403 {
+		t.Errorf("expected 403 for operator, got %d", resp.StatusCode)
+	}
+	if result["code"] != "FORBIDDEN" {
+		t.Errorf("code = %v, want FORBIDDEN", result["code"])
+	}
+}
+
+func TestAccountDeleteRequiresPassword(t *testing.T) {
+	srv := setupTestServer(t)
+	defer srv.Close()
+
+	// Register operator first (uid=1), then test user (uid=2)
+	registerAndLogin(t, srv, "op@test.com", "password123")
+	cookies := registerAndLogin(t, srv, "del1@test.com", "password123")
+	resp, _ := jsonDeleteBody(srv.URL+"/account", map[string]string{}, cookies)
+	if resp.StatusCode != 400 {
+		t.Errorf("expected 400 without password, got %d", resp.StatusCode)
+	}
+}
+
+func TestAccountDeleteWrongPassword(t *testing.T) {
+	srv := setupTestServer(t)
+	defer srv.Close()
+
+	registerAndLogin(t, srv, "op@test.com", "password123")
+	cookies := registerAndLogin(t, srv, "del2@test.com", "password123")
+	resp, _ := jsonDeleteBody(srv.URL+"/account", map[string]string{"password": "wrong"}, cookies)
+	if resp.StatusCode != 401 {
+		t.Errorf("expected 401 with wrong password, got %d", resp.StatusCode)
+	}
+}
+
+func TestAccountDeleteSuccess(t *testing.T) {
+	srv := setupTestServer(t)
+	defer srv.Close()
+
+	registerAndLogin(t, srv, "op@test.com", "password123")
+	cookies := registerAndLogin(t, srv, "del3@test.com", "password123")
+	resp, _ := jsonDeleteBody(srv.URL+"/account", map[string]string{"password": "password123"}, cookies)
+	if resp.StatusCode != 200 {
+		t.Errorf("expected 200, got %d", resp.StatusCode)
+	}
+
+	// Verify account is gone — login should fail
+	resp2, _ := jsonPost(srv.URL+"/auth/login", map[string]string{"email": "del3@test.com", "password": "password123"}, nil)
+	if resp2.StatusCode != 401 {
+		t.Errorf("expected 401 after deletion, got %d", resp2.StatusCode)
+	}
+}
+
+func registerAndLogin(t *testing.T, srv *httptest.Server, email, password string) []*http.Cookie {
+	t.Helper()
+	jsonPost(srv.URL+"/auth/register", map[string]string{"email": email, "password": password}, nil)
+	resp, _ := jsonPost(srv.URL+"/auth/login", map[string]string{"email": email, "password": password}, nil)
+	return resp.Cookies()
+}
+
+func jsonDeleteBody(url string, body any, cookies []*http.Cookie) (*http.Response, map[string]any) {
+	b, _ := json.Marshal(body)
+	req, _ := http.NewRequest("DELETE", url, bytes.NewReader(b))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	for _, c := range cookies {
+		req.AddCookie(c)
+	}
+	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}}
+	resp, _ := client.Do(req)
+	var result map[string]any
+	raw, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	json.Unmarshal(raw, &result)
+	return resp, result
 }
 
 func TestMain(m *testing.M) {
