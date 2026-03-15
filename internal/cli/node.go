@@ -56,6 +56,7 @@ func printNodeUsage() {
 	printFlag("--endpoint <addr>", "Public endpoint, e.g. 1.2.3.4:51820")
 	printFlag("--port <port>", "WireGuard listen port (default: 51820)")
 	printFlag("--interface <name>", "WireGuard interface (default: wg0)")
+	printFlag("--force", "Overwrite existing agent config")
 	fmt.Println()
 	printHeading("Example")
 	fmt.Printf("  %s\n", cmdStyle.Render("postern node add --label gateway-nyc --endpoint 1.2.3.4:51820"))
@@ -64,6 +65,7 @@ func printNodeUsage() {
 
 func runNodeAdd() {
 	var label, ip, endpoint, iface string
+	var force bool
 	port := "51820"
 
 	for i := 1; i < len(os.Args); i++ {
@@ -83,6 +85,8 @@ func runNodeAdd() {
 		case os.Args[i] == "--interface" && i+1 < len(os.Args):
 			i++
 			iface = os.Args[i]
+		case os.Args[i] == "--force" || os.Args[i] == "-f":
+			force = true
 		case os.Args[i] == "--help" || os.Args[i] == "-h":
 			printNodeUsage()
 			return
@@ -96,6 +100,21 @@ func runNodeAdd() {
 	}
 	if iface == "" {
 		iface = "wg0"
+	}
+
+	// Guard against overwriting existing agent config
+	cfgDir := configDir()
+	cfgPath := filepath.Join(cfgDir, "config.json")
+	keyPath := filepath.Join(cfgDir, "private.key")
+	if !force {
+		if _, err := os.Stat(cfgPath); err == nil {
+			fmt.Fprintf(os.Stderr, "Error: agent config already exists at %s\n", cfgPath)
+			fmt.Fprintln(os.Stderr, "This machine is already configured as a node. Adding another")
+			fmt.Fprintln(os.Stderr, "would overwrite the existing private key and credentials.")
+			fmt.Fprintln(os.Stderr)
+			fmt.Fprintln(os.Stderr, "To replace the existing config: postern node add --force ...")
+			os.Exit(1)
+		}
 	}
 
 	// Generate WireGuard keypair
@@ -141,7 +160,11 @@ func runNodeAdd() {
 	json.Unmarshal(respBody, &result)
 
 	if resp.StatusCode != http.StatusCreated {
-		msg := "registration failed"
+		if resp.StatusCode == http.StatusUnauthorized {
+			fmt.Fprintln(os.Stderr, "Error: session expired — run 'postern login' to re-authenticate")
+			os.Exit(1)
+		}
+		msg := "failed to add node"
 		if e, ok := result["error"].(string); ok {
 			msg = e
 		}
@@ -158,21 +181,18 @@ func runNodeAdd() {
 	}
 
 	// Write agent config
+	os.MkdirAll(cfgDir, 0700)
 	agentCfg := map[string]string{
 		"server":    agentServer,
 		"token":     apiKey,
 		"interface": iface,
 	}
 	cfgData, _ := json.MarshalIndent(agentCfg, "", "  ")
-	cfgDir := configDir()
-	os.MkdirAll(cfgDir, 0700)
-	cfgPath := filepath.Join(cfgDir, "config.json")
 	if err := os.WriteFile(cfgPath, cfgData, 0600); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: could not write agent config: %v\n", err)
 	}
 
 	// Save private key separately
-	keyPath := filepath.Join(cfgDir, "private.key")
 	if err := os.WriteFile(keyPath, []byte(privKey+"\n"), 0600); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: could not write private key: %v\n", err)
 	}
@@ -247,6 +267,10 @@ func runNodeUpdate() {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		if resp.StatusCode == http.StatusUnauthorized {
+			fmt.Fprintln(os.Stderr, "Error: session expired — run 'postern login' to re-authenticate")
+			os.Exit(1)
+		}
 		body, _ := io.ReadAll(resp.Body)
 		var result map[string]any
 		json.Unmarshal(body, &result)
@@ -279,6 +303,10 @@ func runNodeList() {
 	body, _ := io.ReadAll(resp.Body)
 
 	if resp.StatusCode != http.StatusOK {
+		if resp.StatusCode == http.StatusUnauthorized {
+			fmt.Fprintln(os.Stderr, "Error: session expired — run 'postern login' to re-authenticate")
+			os.Exit(1)
+		}
 		var result map[string]any
 		json.Unmarshal(body, &result)
 		msg := "request failed"
@@ -348,6 +376,10 @@ func runNodeRemove() {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		if resp.StatusCode == http.StatusUnauthorized {
+			fmt.Fprintln(os.Stderr, "Error: session expired — run 'postern login' to re-authenticate")
+			os.Exit(1)
+		}
 		body, _ := io.ReadAll(resp.Body)
 		var result map[string]any
 		json.Unmarshal(body, &result)
