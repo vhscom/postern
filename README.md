@@ -65,6 +65,23 @@ Tailscale has clients. Postern has agents. A client follows instructions. An age
                  └──────────────────┘
 ```
 
+### Control proxy (optional)
+
+When `GATEWAY_URL` is configured, postern acts as an authenticated reverse proxy to an upstream service.
+
+```
+  ┌──────────────┐        ┌──────────────────┐        ┌──────────────┐
+  │   Operator   │───────►│     Server       │───────►│   Gateway    │
+  │   (browser)  │ cookie │ /ops/control/*   │ proxy  │  (upstream)  │
+  │              │        │ /ops/ws (bridge) │        │              │
+  └──────────────┘        └──────────────────┘        └──────────────┘
+                            uid=1 required
+                            GATEWAY_TOKEN injected
+                            into WebSocket frames
+```
+
+Only the operator (uid=1) can access the control proxy. The server handles auth, injects the gateway token into WebSocket frames, and proxies HTTP and WebSocket traffic to the upstream. The operator never handles the gateway token directly.
+
 ## How it works
 
 1. `postern init` generates secrets and writes a `.env` you can review, then `postern serve` starts the server
