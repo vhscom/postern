@@ -11,6 +11,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
+	"postern/internal/agent"
 	"postern/internal/wgkey"
 )
 
@@ -99,7 +100,7 @@ func runNodeAdd() {
 		os.Exit(1)
 	}
 	if iface == "" {
-		iface = "wg0"
+		iface = agent.DefaultInterface()
 	}
 
 	// Guard against overwriting existing agent config

@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -31,6 +32,7 @@ type config struct {
 
 // Run is the entry point for "postern agent".
 func Run() {
+	var ifaceOverride string
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
 		case "init":
@@ -46,11 +48,20 @@ func Run() {
 			printAgentHelp()
 			return
 		}
+		for i := 1; i < len(os.Args); i++ {
+			if os.Args[i] == "--interface" && i+1 < len(os.Args) {
+				i++
+				ifaceOverride = os.Args[i]
+			}
+		}
 	}
 
 	checkWireGuardTools()
 
 	cfg := loadConfig()
+	if ifaceOverride != "" {
+		cfg.Interface = ifaceOverride
+	}
 	status := newAgentStatus(cfg.Server, cfg.Interface)
 	status.render()
 
@@ -132,7 +143,7 @@ func loadConfig() *config {
 
 	if server != "" && token != "" {
 		if iface == "" {
-			iface = "wg0"
+			iface = DefaultInterface()
 		}
 		return &config{Server: server, Token: token, Interface: iface}
 	}
@@ -149,7 +160,7 @@ func loadConfig() *config {
 		log.Fatalf("Invalid config: %v", err)
 	}
 	if cfg.Interface == "" {
-		cfg.Interface = "wg0"
+		cfg.Interface = DefaultInterface()
 	}
 	return &cfg
 }
@@ -425,8 +436,28 @@ func handleSync(ctx context.Context, conn *websocket.Conn, iface, msgID string, 
 		// Provision interface if we have self info
 		if p.Self != nil && p.Self.MeshIP != "" {
 			st.setMeshIP(p.Self.MeshIP)
-			if err := ensureInterface(iface, p.Self.ListenPort, p.Self.MeshIP); err != nil {
-				st.logError("interface: " + err.Error())
+			if actualIface, err := ensureInterface(iface, p.Self.ListenPort, p.Self.MeshIP); err != nil {
+				errMsg := err.Error()
+				fmt.Fprintln(os.Stderr)
+				if strings.Contains(errMsg, "not permitted") {
+					fmt.Fprintln(os.Stderr, errStyle.Render("Error: creating network interface requires elevated privileges"))
+					fmt.Fprintln(os.Stderr)
+					fmt.Fprintf(os.Stderr, "  Run: %s\n", okStyle.Render("sudo postern agent"))
+				} else if strings.Contains(errMsg, "Address already in use") {
+					fmt.Fprintln(os.Stderr, errStyle.Render("Error: listen port already in use (stale wireguard-go process?)"))
+					fmt.Fprintln(os.Stderr)
+					fmt.Fprintf(os.Stderr, "  Kill stale processes: %s\n", dimStyle.Render("sudo pkill -9 wireguard-go"))
+				} else if strings.Contains(errMsg, "resource busy") {
+					fmt.Fprintln(os.Stderr, errStyle.Render("Error: interface "+iface+" is in use"))
+					fmt.Fprintln(os.Stderr)
+					fmt.Fprintf(os.Stderr, "  Try a different interface: %s\n", dimStyle.Render("postern agent --interface utun4"))
+				} else {
+					fmt.Fprintln(os.Stderr, errStyle.Render("Error: "+errMsg))
+				}
+				os.Exit(1)
+			} else if actualIface != iface {
+				iface = actualIface
+				st.iface = actualIface
 			}
 		}
 		syncErr = wgSyncFull(iface, p.Peers)

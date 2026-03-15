@@ -9,18 +9,27 @@ import (
 	"strings"
 )
 
+// DefaultInterface returns the platform-appropriate default WireGuard interface name.
+func DefaultInterface() string {
+	if runtime.GOOS == "darwin" {
+		return "utun3"
+	}
+	return "wg0"
+}
+
 // ensureInterface creates and configures the WireGuard interface if needed.
-// It sets the private key, listen port, and mesh IP address.
-func ensureInterface(iface string, listenPort int, meshIP string) error {
+// It returns the actual interface name used (may differ on macOS if the
+// requested utun device was unavailable).
+func ensureInterface(iface string, listenPort int, meshIP string) (string, error) {
 	keyPath := filepath.Join(configDir(), "private.key")
 
 	switch runtime.GOOS {
 	case "linux":
-		return ensureInterfaceLinux(iface, keyPath, listenPort, meshIP)
+		return iface, ensureInterfaceLinux(iface, keyPath, listenPort, meshIP)
 	case "darwin":
 		return ensureInterfaceDarwin(iface, keyPath, listenPort, meshIP)
 	default:
-		return fmt.Errorf("unsupported platform: %s", runtime.GOOS)
+		return "", fmt.Errorf("unsupported platform: %s", runtime.GOOS)
 	}
 }
 
@@ -67,35 +76,61 @@ func ensureInterfaceLinux(iface, keyPath string, listenPort int, meshIP string) 
 	return nil
 }
 
-func ensureInterfaceDarwin(iface, keyPath string, listenPort int, meshIP string) error {
+// ensureInterfaceDarwin returns the actual interface name used.
+func ensureInterfaceDarwin(iface, keyPath string, listenPort int, meshIP string) (string, error) {
 	// On macOS, WireGuard uses utun devices via wireguard-go.
 	if exec.Command("wg", "show", iface).Run() != nil {
 		if _, err := exec.LookPath("wireguard-go"); err != nil {
-			return fmt.Errorf("wireguard-go not found — install with: brew install wireguard-go")
+			return "", fmt.Errorf("wireguard-go not found — install with: brew install wireguard-go")
 		}
-		out, err := exec.Command("wireguard-go", iface).CombinedOutput()
-		if err != nil {
-			return fmt.Errorf("wireguard-go %s: %w: %s", iface, err, out)
+
+		// Try requested interface first, then scan for an available one
+		candidates := []string{iface}
+		if strings.HasPrefix(iface, "utun") {
+			for i := 3; i <= 15; i++ {
+				name := fmt.Sprintf("utun%d", i)
+				if name != iface {
+					candidates = append(candidates, name)
+				}
+			}
 		}
-		log.Printf("created interface %s via wireguard-go", iface)
+
+		created := false
+		for _, name := range candidates {
+			out, err := exec.Command("wireguard-go", name).CombinedOutput()
+			if err == nil {
+				iface = name
+				created = true
+				log.Printf("created interface %s via wireguard-go", iface)
+				break
+			}
+			outStr := string(out)
+			if strings.Contains(outStr, "not permitted") {
+				return "", fmt.Errorf("wireguard-go %s: %w: %s", name, err, outStr)
+			}
+			// Interface busy — try next
+		}
+		if !created {
+			return "", fmt.Errorf("no available utun device (utun3-utun15 all in use)")
+		}
 	}
 
 	if err := wgSetInterface(iface, keyPath, listenPort); err != nil {
-		return err
+		return "", err
 	}
 
 	// Assign mesh IP — strip /32 for ifconfig
 	ip := strings.TrimSuffix(meshIP, "/32")
 	out, err := exec.Command("ifconfig", iface, "inet", ip+"/32", ip).CombinedOutput()
 	if err != nil && !strings.Contains(string(out), "File exists") {
-		return fmt.Errorf("ifconfig %s: %w: %s", iface, err, out)
+		return "", fmt.Errorf("ifconfig %s: %w: %s", iface, err, out)
 	}
 
 	out, err = exec.Command("ifconfig", iface, "up").CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("ifconfig %s up: %w: %s", iface, err, out)
+		return "", fmt.Errorf("ifconfig %s up: %w: %s", iface, err, out)
 	}
 
 	log.Printf("interface %s configured: ip=%s port=%d", iface, meshIP, listenPort)
-	return nil
+	return iface, nil
 }
