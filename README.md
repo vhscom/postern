@@ -135,6 +135,11 @@ Only the operator (uid=1) can access the control proxy. The server handles auth,
 - `PUT /account/nodes/{label}` — Update node
 - `DELETE /account/nodes/{label}` — Delete node
 - `POST /account/nodes/invite` — Generate invite token
+- `GET /account/services` — List services (shows access status)
+- `POST /account/services` — Register service (operator only)
+- `DELETE /account/services/{name}` — Remove service (operator only)
+- `POST /account/services/{name}/grant` — Grant user access (operator only)
+- `DELETE /account/services/{name}/grant/{user_id}` — Revoke user access (operator only)
 
 **Billing** (when Stripe is configured)
 - `POST /account/billing/checkout` — Start checkout
