@@ -272,7 +272,37 @@ func runServe() {
 	store.Close()
 }
 
+// loadDotenv reads a .env file and sets any variables not already in the environment.
+// Existing env vars take precedence. Lines starting with # are ignored.
+func loadDotenv(path string) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || line[0] == '#' {
+			continue
+		}
+		line = strings.TrimPrefix(line, "export ")
+		k, v, ok := strings.Cut(line, "=")
+		if !ok {
+			continue
+		}
+		k = strings.TrimSpace(k)
+		v = strings.TrimSpace(v)
+		if len(v) >= 2 && (v[0] == '"' && v[len(v)-1] == '"' || v[0] == '\'' && v[len(v)-1] == '\'') {
+			v = v[1 : len(v)-1]
+		}
+		if _, exists := os.LookupEnv(k); !exists {
+			os.Setenv(k, v)
+		}
+	}
+}
+
 func loadConfig() *Config {
+	loadDotenv(".env")
+
 	c := &Config{
 		Addr:                envOr("ADDR", ":8080"),
 		DBPath:              envOr("DB_PATH", "postern.db"),

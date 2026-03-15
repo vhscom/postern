@@ -10,18 +10,18 @@ Stop hand-editing WireGuard configs across 6 machines. Postern puts an agent on 
 ## Quick start
 
 ```bash
-# Server
-export JWT_ACCESS_SECRET=your-access-secret
-export JWT_REFRESH_SECRET=your-refresh-secret
+# Server setup (generates secrets, writes .env)
+postern init
 postern serve
 
 # Add your first node
-postern node add gateway
+postern login http://localhost:8080
+postern node add --label gateway
 
 # Invite another machine
 postern invite
-# On the other machine:
-postern join <token>
+# On the other machine (joins and starts the agent automatically):
+postern join https://postern.example.com <token>
 ```
 
 Each node runs an agent that handles the rest: endpoint discovery, peer sync, NAT traversal, relay fallback, key rotation, and local environment monitoring.
@@ -44,13 +44,14 @@ Tailscale has clients. Postern has agents. A client follows instructions. An age
 
 ## How it works
 
-1. `postern serve` starts the coordination server with a web UI, ops API, and WebSocket endpoint
-2. `postern node add <label>` generates WireGuard keys, registers the node, and gets a mesh IP
-3. The agent connects via WebSocket, discovers its public endpoint via STUN, and reports it
-4. The server pushes peer lists to all connected agents — each agent configures WireGuard automatically
-5. When direct NAT traversal fails, agents relay encrypted WireGuard packets through the WebSocket
-6. Agents rotate keys periodically and report node health, handshake status, and environment observations
-7. The TUI (`postern ctl`) gives you a live view of the mesh — node status, events, and agent reports
+1. `postern init` generates secrets and writes a `.env` you can review, then `postern serve` starts the server
+2. `postern node add --label <name>` generates WireGuard keys, registers the node, and gets a mesh IP
+3. `postern join <server> <token>` redeems an invite, writes config, and starts the agent automatically
+4. The agent connects via WebSocket, discovers its public endpoint via STUN, and reports it
+5. The server pushes peer lists to all connected agents — each agent configures WireGuard automatically
+6. When direct NAT traversal fails, agents relay encrypted WireGuard packets through the WebSocket
+7. Agents rotate keys periodically and report node health, handshake status, and environment observations
+8. The TUI (`postern ctl`) gives you a live view of the mesh — node status, events, and agent reports
 
 ## Environment variables
 
@@ -136,7 +137,7 @@ postern
 ├── proxy.go             Control proxy HTTP reverse proxy
 └── internal/
     ├── agent/           Autonomous node agent (STUN, relay, key rotation, monitoring)
-    ├── cli/             CLI commands (login, node, invite, join)
+    ├── cli/             CLI commands (init, login, node, invite, join)
     ├── ctl/             TUI dashboard
     ├── api/             API client library
     ├── wgkey/           WireGuard keypair generation
@@ -147,14 +148,18 @@ postern
 ## Docker
 
 ```bash
+# Generate config first
+postern init
+
 docker build -t postern .
-docker run -p 8080:8080 -p 9090:9090 \
-  -e JWT_ACCESS_SECRET=secret1 \
-  -e JWT_REFRESH_SECRET=secret2 \
-  -e AGENT_PROVISIONING_SECRET=secret3 \
-  -e OPS_ADDR=:9090 \
+docker run -p 8080:8080 \
+  --env-file .env \
+  -v $(pwd)/data:/data \
+  -e DB_PATH=/data/postern.db \
   postern
 ```
+
+The volume mount keeps the database across container restarts.
 
 ## Build
 
