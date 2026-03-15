@@ -329,7 +329,7 @@ func TestWSCapabilityDeniedForNodeAgent(t *testing.T) {
 	var userID int
 	store.QueryRow("SELECT id FROM account WHERE email = 'node-test@test.com'").Scan(&userID)
 
-	nodeKey, _, _ := insertNodeWithCredential(nodeCreateOpts{
+	nodeKey, _, _ := insertNodeWithCredential(store, nodeCreateOpts{
 		UserID:         userID,
 		Label:          "test-node",
 		WGPubkey:       "YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY=",
@@ -742,7 +742,7 @@ func TestWSEndpointDiscovered(t *testing.T) {
 	var userID int
 	store.QueryRow("SELECT id FROM account WHERE email = 'ep-test@test.com'").Scan(&userID)
 
-	nodeKey, _, _ := insertNodeWithCredential(nodeCreateOpts{
+	nodeKey, _, _ := insertNodeWithCredential(store, nodeCreateOpts{
 		UserID:         userID,
 		Label:          "ep-node",
 		WGPubkey:       "YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY=",
@@ -790,7 +790,7 @@ func TestWSEndpointDiscoveredInvalid(t *testing.T) {
 	var userID int
 	store.QueryRow("SELECT id FROM account WHERE email = 'ep2@test.com'").Scan(&userID)
 
-	nodeKey, _, _ := insertNodeWithCredential(nodeCreateOpts{
+	nodeKey, _, _ := insertNodeWithCredential(store, nodeCreateOpts{
 		UserID: userID, Label: "ep2-node",
 		WGPubkey:       "YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY=",
 		ListenPort:     51820,
@@ -832,7 +832,7 @@ func TestWSKeyRotate(t *testing.T) {
 	var userID int
 	store.QueryRow("SELECT id FROM account WHERE email = 'kr@test.com'").Scan(&userID)
 
-	nodeKey, _, _ := insertNodeWithCredential(nodeCreateOpts{
+	nodeKey, _, _ := insertNodeWithCredential(store, nodeCreateOpts{
 		UserID: userID, Label: "kr-node",
 		WGPubkey:       "YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY=",
 		ListenPort:     51820,
@@ -882,7 +882,7 @@ func TestWSKeyRotateInvalidPubkey(t *testing.T) {
 	var userID int
 	store.QueryRow("SELECT id FROM account WHERE email = 'kr2@test.com'").Scan(&userID)
 
-	nodeKey, _, _ := insertNodeWithCredential(nodeCreateOpts{
+	nodeKey, _, _ := insertNodeWithCredential(store, nodeCreateOpts{
 		UserID: userID, Label: "kr2-node",
 		WGPubkey:       "YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY=",
 		ListenPort:     51820,

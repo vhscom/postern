@@ -11,7 +11,7 @@ import (
 // GET /account/nodes
 func handleNodeList(w http.ResponseWriter, r *http.Request) {
 	claims := getClaims(r)
-	tier := getUserTier(claims.UID)
+	tier := getUserTier(store, claims.UID)
 
 	rows, err := store.Query(
 		`SELECT label, wg_pubkey, wg_endpoint, wg_listen_port, allowed_ips, persistent_keepalive,
@@ -88,14 +88,7 @@ func handleNodeCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	body.AllowedIPs = strings.TrimSpace(body.AllowedIPs)
-	if body.AllowedIPs == "" {
-		ip, err := allocateMeshIP(claims.UID)
-		if err != nil {
-			respondError(w, r, http.StatusConflict, "IP_EXHAUSTED", err.Error())
-			return
-		}
-		body.AllowedIPs = ip
-	} else if !validAllowedIPs(body.AllowedIPs) {
+	if body.AllowedIPs != "" && !validAllowedIPs(body.AllowedIPs) {
 		respondError(w, r, http.StatusBadRequest, "VALIDATION_ERROR", "Invalid allowed_ips (must be CIDR, e.g. 10.0.0.1/32)")
 		return
 	}
@@ -109,17 +102,6 @@ func handleNodeCreate(w http.ResponseWriter, r *http.Request) {
 		body.Interface = "wg0"
 	}
 
-	// Tier limit
-	tier := getUserTier(claims.UID)
-	limit := nodeLimit(tier)
-	var count int
-	store.QueryRow("SELECT COUNT(*) FROM user_node WHERE user_id = ?", claims.UID).Scan(&count)
-	if count >= limit {
-		respondError(w, r, http.StatusPaymentRequired, "TIER_LIMIT",
-			fmt.Sprintf("Node limit reached (%d). Upgrade for more.", limit))
-		return
-	}
-
 	// Determine endpoint source
 	var wgEndpoint *string
 	endpointSource := "stun"
@@ -128,7 +110,33 @@ func handleNodeCreate(w http.ResponseWriter, r *http.Request) {
 		endpointSource = "manual"
 	}
 
-	apiKey, _, err := insertNodeWithCredential(nodeCreateOpts{
+	tx, err := store.Begin()
+	if err != nil {
+		respondError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to create node")
+		return
+	}
+	defer tx.Rollback()
+
+	tier := getUserTier(tx, claims.UID)
+	limit := nodeLimit(tier)
+	var count int
+	tx.QueryRow("SELECT COUNT(*) FROM user_node WHERE user_id = ?", claims.UID).Scan(&count)
+	if count >= limit {
+		respondError(w, r, http.StatusPaymentRequired, "TIER_LIMIT",
+			fmt.Sprintf("Node limit reached (%d). Upgrade for more.", limit))
+		return
+	}
+
+	if body.AllowedIPs == "" {
+		ip, err := allocateMeshIP(tx, claims.UID)
+		if err != nil {
+			respondError(w, r, http.StatusConflict, "IP_EXHAUSTED", err.Error())
+			return
+		}
+		body.AllowedIPs = ip
+	}
+
+	apiKey, _, err := insertNodeWithCredential(tx, nodeCreateOpts{
 		UserID:         claims.UID,
 		Label:          body.Label,
 		WGPubkey:       body.WGPubkey,
@@ -144,6 +152,11 @@ func handleNodeCreate(w http.ResponseWriter, r *http.Request) {
 			respondError(w, r, http.StatusConflict, "NODE_EXISTS", "Node with this label already exists")
 			return
 		}
+		respondError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to create node")
+		return
+	}
+
+	if err := tx.Commit(); err != nil {
 		respondError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to create node")
 		return
 	}
@@ -322,12 +335,12 @@ type nodeCreateOpts struct {
 
 // insertNodeWithCredential creates an agent credential and node record.
 // Returns the API key for the agent and the node ID, or an error.
-func insertNodeWithCredential(opts nodeCreateOpts) (apiKey string, nodeID int64, err error) {
+func insertNodeWithCredential(db querier, opts nodeCreateOpts) (apiKey string, nodeID int64, err error) {
 	agentName := fmt.Sprintf("node-%s-%d", opts.Label, opts.UserID)
 	apiKey = randomHex(32)
 	keyHash := hashAPIKey(apiKey)
 
-	result, err := store.Exec(
+	result, err := db.Exec(
 		"INSERT INTO agent_credential (name, key_hash, trust_level, description, user_id) VALUES (?,?,?,?,?)",
 		agentName, keyHash, "read", fmt.Sprintf("Node agent for %s", opts.Label), opts.UserID,
 	)
@@ -336,13 +349,13 @@ func insertNodeWithCredential(opts nodeCreateOpts) (apiKey string, nodeID int64,
 	}
 	credID, _ := result.LastInsertId()
 
-	nodeResult, err := store.Exec(
+	nodeResult, err := db.Exec(
 		`INSERT INTO user_node (user_id, label, wg_pubkey, wg_endpoint, wg_listen_port, allowed_ips, persistent_keepalive, interface_name, agent_credential_id, wg_endpoint_source)
 		VALUES (?,?,?,?,?,?,?,?,?,?)`,
 		opts.UserID, opts.Label, opts.WGPubkey, opts.WGEndpoint, opts.ListenPort, opts.AllowedIPs, opts.Keepalive, opts.Interface, credID, opts.EndpointSource,
 	)
 	if err != nil {
-		store.Exec("DELETE FROM agent_credential WHERE id = ?", credID)
+		db.Exec("DELETE FROM agent_credential WHERE id = ?", credID)
 		return "", 0, fmt.Errorf("node: %w", err)
 	}
 
@@ -351,8 +364,8 @@ func insertNodeWithCredential(opts nodeCreateOpts) (apiKey string, nodeID int64,
 }
 
 // allocateMeshIP assigns the next available IP from 10.0.0.0/24 for a user's mesh.
-func allocateMeshIP(userID int) (string, error) {
-	rows, err := store.Query("SELECT allowed_ips FROM user_node WHERE user_id = ?", userID)
+func allocateMeshIP(db querier, userID int) (string, error) {
+	rows, err := db.Query("SELECT allowed_ips FROM user_node WHERE user_id = ?", userID)
 	if err != nil {
 		return "", err
 	}

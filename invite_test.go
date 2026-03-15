@@ -164,7 +164,7 @@ func TestAllocateMeshIP(t *testing.T) {
 	store.Exec("INSERT INTO account (email, password_data) VALUES ('test@test.com', 'x')")
 
 	// First allocation should be 10.0.0.1/32
-	ip, err := allocateMeshIP(1)
+	ip, err := allocateMeshIP(store, 1)
 	if err != nil {
 		t.Fatalf("allocateMeshIP: %v", err)
 	}
@@ -178,7 +178,7 @@ func TestAllocateMeshIP(t *testing.T) {
 		VALUES (1, 'n1', 'pk', '10.0.0.1/32', 1, 'manual')`)
 
 	// Second allocation should be 10.0.0.2/32
-	ip, err = allocateMeshIP(1)
+	ip, err = allocateMeshIP(store, 1)
 	if err != nil {
 		t.Fatalf("allocateMeshIP: %v", err)
 	}

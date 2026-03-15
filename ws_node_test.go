@@ -80,7 +80,7 @@ func TestGetUserTierDefault(t *testing.T) {
 	cfg = &Config{DBPath: ":memory:"}
 	initDB(cfg.DBPath)
 
-	tier := getUserTier(999)
+	tier := getUserTier(store, 999)
 	if tier != "free" {
 		t.Errorf("expected free for unknown user, got %s", tier)
 	}

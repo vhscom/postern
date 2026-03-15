@@ -8,9 +8,9 @@ const (
 	maxNodesTeam = 25
 )
 
-func getUserTier(userID int) string {
+func getUserTier(db querier, userID int) string {
 	var tier string
-	err := store.QueryRow(
+	err := db.QueryRow(
 		"SELECT tier FROM user_subscription WHERE user_id = ? AND (current_period_end IS NULL OR current_period_end > datetime('now'))",
 		userID,
 	).Scan(&tier)

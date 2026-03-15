@@ -65,12 +65,20 @@ func handleJoinRedeem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Look up and validate token
 	tokenHash := hashAPIKey(body.Token)
+
+	tx, err := store.Begin()
+	if err != nil {
+		respondError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to redeem token")
+		return
+	}
+	defer tx.Rollback()
+
+	// Look up and validate token
 	var tokenID, userID int
 	var expiresAt string
 	var usedAt *string
-	err := store.QueryRow(
+	err = tx.QueryRow(
 		"SELECT id, user_id, expires_at, used_at FROM invite_token WHERE token_hash = ?",
 		tokenHash,
 	).Scan(&tokenID, &userID, &expiresAt, &usedAt)
@@ -89,10 +97,10 @@ func handleJoinRedeem(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check tier limit
-	tier := getUserTier(userID)
+	tier := getUserTier(tx, userID)
 	limit := nodeLimit(tier)
 	var count int
-	store.QueryRow("SELECT COUNT(*) FROM user_node WHERE user_id = ?", userID).Scan(&count)
+	tx.QueryRow("SELECT COUNT(*) FROM user_node WHERE user_id = ?", userID).Scan(&count)
 	if count >= limit {
 		respondError(w, r, http.StatusPaymentRequired, "TIER_LIMIT",
 			fmt.Sprintf("Node limit reached (%d). Upgrade for more.", limit))
@@ -100,13 +108,13 @@ func handleJoinRedeem(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Auto-assign mesh IP
-	meshIP, err := allocateMeshIP(userID)
+	meshIP, err := allocateMeshIP(tx, userID)
 	if err != nil {
 		respondError(w, r, http.StatusConflict, "IP_EXHAUSTED", err.Error())
 		return
 	}
 
-	apiKey, nodeID, err := insertNodeWithCredential(nodeCreateOpts{
+	apiKey, nodeID, err := insertNodeWithCredential(tx, nodeCreateOpts{
 		UserID:         userID,
 		Label:          body.Label,
 		WGPubkey:       body.WGPubkey,
@@ -125,7 +133,12 @@ func handleJoinRedeem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	store.Exec("UPDATE invite_token SET used_at = datetime('now'), used_by_node_id = ? WHERE id = ?", nodeID, tokenID)
+	tx.Exec("UPDATE invite_token SET used_at = datetime('now'), used_by_node_id = ? WHERE id = ?", nodeID, tokenID)
+
+	if err := tx.Commit(); err != nil {
+		respondError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to redeem token")
+		return
+	}
 
 	emitEvent("node.joined", clientIP(r), userID, r.UserAgent(), http.StatusCreated,
 		map[string]any{"label": body.Label, "node_id": nodeID})

@@ -9,6 +9,13 @@ import (
 
 var store *sql.DB
 
+// querier is satisfied by both *sql.DB and *sql.Tx.
+type querier interface {
+	Exec(query string, args ...any) (sql.Result, error)
+	QueryRow(query string, args ...any) *sql.Row
+	Query(query string, args ...any) (*sql.Rows, error)
+}
+
 func initDB(path string) {
 	var err error
 	dsn := path + "?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)"
