@@ -2,7 +2,7 @@ package main
 
 import (
 	"encoding/json"
-	"log"
+	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
@@ -336,7 +336,7 @@ func handleAgentMessage(conn *wsConn, agent *AgentPrincipal, granted map[string]
 		}
 		json.Unmarshal(msg.Payload, &p)
 		if !p.Success {
-			log.Printf("wg.sync.result: agent=%s error=%s", agent.Name, p.Error)
+			slog.Warn("wg.sync.result failed", "agent", agent.Name, "error", p.Error)
 		}
 
 	case "endpoint.discovered":
@@ -407,7 +407,7 @@ func handleEndpointDiscovered(conn *wsConn, agent *AgentPrincipal, id string, pa
 	})
 
 	if rows > 0 {
-		log.Printf("endpoint.discovered: node=%d endpoint=%s", nodeID, p.Endpoint)
+		slog.Info("endpoint discovered", "node", nodeID, "endpoint", p.Endpoint)
 		go notifyNodeSync(userID)
 	}
 }
@@ -449,7 +449,7 @@ func handleKeyRotate(conn *wsConn, agent *AgentPrincipal, id string, payload jso
 		"success": true,
 	})
 
-	log.Printf("key.rotate: node=%d agent=%s", nodeID, agent.Name)
+	slog.Info("key rotated", "node", nodeID, "agent", agent.Name)
 	go notifyNodeSync(userID)
 }
 

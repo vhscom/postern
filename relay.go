@@ -2,7 +2,7 @@ package main
 
 import (
 	"encoding/binary"
-	"log"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -63,7 +63,7 @@ func registerRelayBinding(sourceNodeID, peerNodeID, userID int) bool {
 	}
 
 	state.peerNodeIDs = append(state.peerNodeIDs, peerNodeID)
-	log.Printf("relay: node %d bound to peer %d", sourceNodeID, peerNodeID)
+	slog.Info("relay bound", "source", sourceNodeID, "peer", peerNodeID)
 	return true
 }
 

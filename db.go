@@ -2,7 +2,8 @@ package main
 
 import (
 	"database/sql"
-	"log"
+	"log/slog"
+	"os"
 	"strings"
 
 	_ "modernc.org/sqlite"
@@ -30,7 +31,8 @@ func initDB(path string) {
 	}
 	store, err = sql.Open("sqlite", dsn)
 	if err != nil {
-		log.Fatal(err)
+		slog.Error("database open failed", "error", err)
+		os.Exit(1)
 	}
 	store.SetMaxOpenConns(1) // SQLite single-writer
 	migrate()
@@ -131,7 +133,8 @@ func migrate() {
 	}
 	for _, s := range stmts {
 		if _, err := store.Exec(s); err != nil {
-			log.Fatalf("migrate: %v\n%s", err, s)
+			slog.Error("migrate failed", "error", err, "statement", s)
+			os.Exit(1)
 		}
 	}
 }

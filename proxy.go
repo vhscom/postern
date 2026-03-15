@@ -1,10 +1,11 @@
 package main
 
 import (
-	"log"
+	"log/slog"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 )
@@ -40,7 +41,8 @@ func newProxy() http.Handler {
 	}
 	target, err := url.Parse(cfg.GatewayURL)
 	if err != nil {
-		log.Fatalf("invalid GATEWAY_URL: %v", err)
+		slog.Error("invalid GATEWAY_URL", "error", err)
+		os.Exit(1)
 	}
 
 	rp := &httputil.ReverseProxy{
@@ -85,7 +87,7 @@ func newProxy() http.Handler {
 			return nil
 		},
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
-			log.Printf("[proxy] upstream error: %v", err)
+			slog.Error("proxy upstream error", "error", err)
 			badGateway(w)
 		},
 	}

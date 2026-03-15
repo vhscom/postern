@@ -2,7 +2,7 @@ package main
 
 import (
 	"encoding/json"
-	"log"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -68,7 +68,7 @@ func notifyNodeSync(userID int) {
 		userID,
 	)
 	if err != nil {
-		log.Printf("notifyNodeSync: query nodes: %v", err)
+		slog.Error("notifyNodeSync: query nodes", "error", err)
 		return
 	}
 	defer rows.Close()

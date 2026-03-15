@@ -2,7 +2,7 @@ package main
 
 import (
 	"encoding/json"
-	"log"
+	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
@@ -191,7 +191,7 @@ func injectToken(raw []byte, token string) []byte {
 		return raw
 	}
 	if _, exists := params["auth"]; exists {
-		log.Printf("[bridge] connect frame already contains auth field, overwriting")
+		slog.Warn("bridge connect frame already contains auth field, overwriting")
 	}
 	params["auth"] = map[string]string{"token": token}
 	out, err := json.Marshal(f)

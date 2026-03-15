@@ -4,7 +4,7 @@ import (
 	"bufio"
 	"context"
 	"crypto/subtle"
-	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"strconv"
@@ -192,7 +192,7 @@ func accessLog(next http.Handler) http.Handler {
 		start := time.Now()
 		rec := &statusRecorder{ResponseWriter: w, status: 200}
 		next.ServeHTTP(rec, r)
-		log.Printf("%s %s %d %s", r.Method, r.URL.Path, rec.status, time.Since(start).Round(time.Microsecond))
+		slog.Info("request", "method", r.Method, "path", r.URL.Path, "status", rec.status, "duration", time.Since(start).Round(time.Microsecond))
 	})
 }
 

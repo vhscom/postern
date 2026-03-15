@@ -2,7 +2,7 @@ package main
 
 import (
 	"encoding/json"
-	"log"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -172,6 +172,6 @@ func isNavigation(r *http.Request) bool {
 
 func logError(op string, err error) {
 	if err != nil {
-		log.Printf("[error] %s: %v", op, err)
+		slog.Error(op, "error", err)
 	}
 }

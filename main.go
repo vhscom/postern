@@ -4,13 +4,15 @@ import (
 	"context"
 	"embed"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/joho/godotenv"
 
 	"postern/internal/agent"
 	"postern/internal/cli"
@@ -236,33 +238,35 @@ func runServe() {
 	defer stop()
 
 	go func() {
-		log.Printf("postern %s (db: %s)", cfg.Addr, cfg.DBPath)
+		slog.Info("postern starting", "addr", cfg.Addr, "db", cfg.DBPath)
 		if splitOps {
-			log.Printf("  /ops surface → %s", cfg.OpsAddr)
+			slog.Info("ops surface split", "ops_addr", cfg.OpsAddr)
 		} else if cfg.AgentSecret != "" {
-			log.Printf("  /ops surface enabled")
+			slog.Info("ops surface enabled")
 		}
 		if cfg.GatewayURL != "" {
-			log.Printf("  control proxy → %s", cfg.GatewayURL)
+			slog.Info("control proxy enabled", "gateway", cfg.GatewayURL)
 		}
 		if cfg.StripeSecretKey != "" {
-			log.Printf("  billing enabled")
+			slog.Info("billing enabled")
 		}
 		if err := srv.ListenAndServe(); err != http.ErrServerClosed {
-			log.Fatal(err)
+			slog.Error("server failed", "error", err)
+			os.Exit(1)
 		}
 	}()
 
 	if opsSrv != nil {
 		go func() {
 			if err := opsSrv.ListenAndServe(); err != http.ErrServerClosed {
-				log.Fatal(err)
+				slog.Error("ops server failed", "error", err)
+				os.Exit(1)
 			}
 		}()
 	}
 
 	<-ctx.Done()
-	log.Printf("shutting down...")
+	slog.Info("shutting down")
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -273,36 +277,9 @@ func runServe() {
 	store.Close()
 }
 
-// loadDotenv reads a .env file and sets any variables not already in the environment.
-// Existing env vars take precedence. Lines starting with # are ignored.
-func loadDotenv(path string) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return
-	}
-	for _, line := range strings.Split(string(data), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || line[0] == '#' {
-			continue
-		}
-		line = strings.TrimPrefix(line, "export ")
-		k, v, ok := strings.Cut(line, "=")
-		if !ok {
-			continue
-		}
-		k = strings.TrimSpace(k)
-		v = strings.TrimSpace(v)
-		if len(v) >= 2 && (v[0] == '"' && v[len(v)-1] == '"' || v[0] == '\'' && v[len(v)-1] == '\'') {
-			v = v[1 : len(v)-1]
-		}
-		if _, exists := os.LookupEnv(k); !exists {
-			os.Setenv(k, v)
-		}
-	}
-}
-
 func loadConfig() *Config {
-	loadDotenv(".env")
+	// Load .env if present; existing env vars take precedence.
+	godotenv.Load(".env")
 
 	c := &Config{
 		Addr:                envOr("ADDR", ":8080"),
@@ -335,7 +312,8 @@ func mustEnv(k string) string {
 	if v := os.Getenv(k); v != "" {
 		return v
 	}
-	log.Fatalf("%s required", k)
+	slog.Error("required env var missing", "key", k)
+	os.Exit(1)
 	return ""
 }
 
