@@ -3,10 +3,10 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 )
 
 type storedSession struct {
@@ -79,19 +79,14 @@ func guardExistingConfig(force bool, command string) (cfgDir, cfgPath, keyPath s
 }
 
 // authedRequest creates an HTTP request with stored session cookies.
-func authedRequest(method, path string, body *strings.Reader) (*http.Request, *storedSession, error) {
+func authedRequest(method, path string, body io.Reader) (*http.Request, *storedSession, error) {
 	sess, err := loadSession()
 	if err != nil {
 		return nil, nil, err
 	}
 
 	url := sess.Server + path
-	var req *http.Request
-	if body != nil {
-		req, err = http.NewRequest(method, url, body)
-	} else {
-		req, err = http.NewRequest(method, url, nil)
-	}
+	req, err := http.NewRequest(method, url, body)
 	if err != nil {
 		return nil, nil, err
 	}

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -126,7 +127,7 @@ func runNodeAdd() {
 	}
 	data, _ := json.Marshal(reqBody)
 
-	req, sess, err := authedRequest("POST", "/account/nodes", strings.NewReader(string(data)))
+	req, sess, err := authedRequest("POST", "/account/nodes", bytes.NewReader(data))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
@@ -236,7 +237,7 @@ func runNodeUpdate() {
 	}
 
 	data, _ := json.Marshal(fields)
-	req, _, err := authedRequest("PUT", "/account/nodes/"+label, strings.NewReader(string(data)))
+	req, _, err := authedRequest("PUT", "/account/nodes/"+label, bytes.NewReader(data))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)

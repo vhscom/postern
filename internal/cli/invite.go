@@ -1,12 +1,12 @@
 package cli
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
-	"strings"
 )
 
 // RunInvite handles "postern invite" — creates an invite token for adding nodes.
@@ -17,7 +17,7 @@ func RunInvite() {
 	}
 
 	data, _ := json.Marshal(map[string]any{})
-	req, _, err := authedRequest("POST", "/account/nodes/invite", strings.NewReader(string(data)))
+	req, _, err := authedRequest("POST", "/account/nodes/invite", bytes.NewReader(data))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)

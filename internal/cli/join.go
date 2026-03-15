@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -77,7 +78,7 @@ func RunJoin() {
 	}
 	data, _ := json.Marshal(reqBody)
 
-	req, err := http.NewRequest("POST", serverURL+"/join", strings.NewReader(string(data)))
+	req, err := http.NewRequest("POST", serverURL+"/join", bytes.NewReader(data))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)

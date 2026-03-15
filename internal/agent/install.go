@@ -97,7 +97,11 @@ func runInstall() {
 }
 
 func installLaunchd(params serviceParams) {
-	home, _ := os.UserHomeDir()
+	home, err := os.UserHomeDir()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: could not determine home directory: %v\n", err)
+		os.Exit(1)
+	}
 	params.LogDir = filepath.Join(home, "Library", "Logs")
 	os.MkdirAll(params.LogDir, 0755)
 
@@ -181,7 +185,11 @@ func runUninstall() {
 }
 
 func uninstallLaunchd() {
-	home, _ := os.UserHomeDir()
+	home, err := os.UserHomeDir()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: could not determine home directory: %v\n", err)
+		os.Exit(1)
+	}
 	plistPath := filepath.Join(home, "Library", "LaunchAgents", launchdLabel+".plist")
 
 	exec.Command("launchctl", "unload", plistPath).Run()

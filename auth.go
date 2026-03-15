@@ -174,15 +174,34 @@ func handleAccountDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Cascade cleanup
-	store.Exec("DELETE FROM invite_token WHERE user_id = ?", claims.UID)
-	store.Exec("DELETE FROM subscription_history WHERE user_id = ?", claims.UID)
-	store.Exec("DELETE FROM user_subscription WHERE user_id = ?", claims.UID)
-	store.Exec("DELETE FROM user_node WHERE user_id = ?", claims.UID)
-	store.Exec("DELETE FROM agent_credential WHERE user_id = ?", claims.UID)
-	store.Exec("DELETE FROM session WHERE user_id = ?", claims.UID)
-	store.Exec("DELETE FROM security_event WHERE user_id = ?", claims.UID)
-	store.Exec("DELETE FROM account WHERE id = ?", claims.UID)
+	// Cascade cleanup in a transaction
+	tx, err := store.Begin()
+	if err != nil {
+		respondError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Account deletion failed")
+		return
+	}
+	defer tx.Rollback()
+
+	for _, q := range []string{
+		"DELETE FROM invite_token WHERE user_id = ?",
+		"DELETE FROM subscription_history WHERE user_id = ?",
+		"DELETE FROM user_subscription WHERE user_id = ?",
+		"DELETE FROM user_node WHERE user_id = ?",
+		"DELETE FROM agent_credential WHERE user_id = ?",
+		"DELETE FROM session WHERE user_id = ?",
+		"DELETE FROM security_event WHERE user_id = ?",
+		"DELETE FROM account WHERE id = ?",
+	} {
+		if _, err := tx.Exec(q, claims.UID); err != nil {
+			respondError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Account deletion failed")
+			return
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		respondError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Account deletion failed")
+		return
+	}
 
 	clearTokenCookies(w)
 	emitEvent("account.deleted", clientIP(r), claims.UID, r.UserAgent(), 200, nil)
