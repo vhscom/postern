@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	sharedcrypto "postern/internal/crypto"
+
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/pbkdf2"
 	"golang.org/x/text/unicode/norm"
@@ -128,11 +130,7 @@ func hashAPIKey(key string) string {
 }
 
 func randomHex(n int) string {
-	b := make([]byte, n)
-	if _, err := rand.Read(b); err != nil {
-		panic("crypto/rand: " + err.Error())
-	}
-	return fmt.Sprintf("%x", b)
+	return sharedcrypto.RandomHex(n)
 }
 
 func hmacSHA256(key, data string) string {
