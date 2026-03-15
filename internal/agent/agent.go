@@ -51,12 +51,13 @@ func Run() {
 	checkWireGuardTools()
 
 	cfg := loadConfig()
-	log.Printf("postern agent: server=%s interface=%s", cfg.Server, cfg.Interface)
+	status := newAgentStatus(cfg.Server, cfg.Interface)
+	status.render()
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	connectLoop(ctx, cfg)
+	connectLoop(ctx, cfg, status)
 }
 
 func printAgentHelp() {
@@ -153,21 +154,22 @@ func loadConfig() *config {
 	return &cfg
 }
 
-func connectLoop(ctx context.Context, cfg *config) {
+func connectLoop(ctx context.Context, cfg *config, status *agentStatus) {
 	backoff := time.Second
 
 	for {
-		err := runSession(ctx, cfg)
+		err := runSession(ctx, cfg, status)
 		if ctx.Err() != nil {
-			log.Printf("shutting down")
 			return
 		}
 
+		reason := "unknown"
 		if err != nil {
-			log.Printf("disconnected: %v", err)
+			reason = err.Error()
 		}
+		status.setReconnecting(reason)
+		status.render()
 
-		log.Printf("reconnecting in %s...", backoff)
 		select {
 		case <-ctx.Done():
 			return
@@ -181,7 +183,7 @@ func connectLoop(ctx context.Context, cfg *config) {
 	}
 }
 
-func runSession(ctx context.Context, cfg *config) error {
+func runSession(ctx context.Context, cfg *config, st *agentStatus) error {
 	wsURL := cfg.Server + "/ops/ws"
 	conn, _, err := websocket.Dial(ctx, wsURL, &websocket.DialOptions{
 		HTTPHeader: map[string][]string{
@@ -193,7 +195,8 @@ func runSession(ctx context.Context, cfg *config) error {
 	}
 	defer conn.CloseNow()
 
-	log.Printf("connected to %s", cfg.Server)
+	st.setConnected()
+	st.render()
 
 	// Negotiate capabilities
 	capReq := map[string]any{
@@ -223,27 +226,27 @@ func runSession(ctx context.Context, cfg *config) error {
 	for _, c := range granted.Granted {
 		caps[c] = true
 	}
-	log.Printf("capabilities: %v", granted.Granted)
 
 	if !caps["wg_sync"] {
 		return fmt.Errorf("server did not grant wg_sync capability")
 	}
 
 	// Send initial status
-	status, err := wgShow(cfg.Interface)
+	wgStatus, err := wgShow(cfg.Interface)
 	if err != nil {
-		log.Printf("warning: could not read wg interface %s: %v", cfg.Interface, err)
+		st.logEvent("wg interface not yet provisioned")
 	} else {
-		sendStatus(ctx, conn, status)
+		sendStatus(ctx, conn, wgStatus)
+		st.setPeers(len(wgStatus.Peers))
 	}
 
 	// STUN endpoint discovery
 	if caps["endpoint_discovery"] {
-		go sendEndpointDiscovery(ctx, conn, getListenPort(status))
+		go sendEndpointDiscovery(ctx, conn, getListenPort(wgStatus), st)
 	}
 
 	// Relay manager
-	rm := newRelayManager(ctx, conn, cfg.Interface, getListenPort(status))
+	rm := newRelayManager(ctx, conn, cfg.Interface, getListenPort(wgStatus))
 	defer rm.close()
 
 	// Main loop: read server messages, report status periodically
@@ -281,34 +284,39 @@ func runSession(ctx context.Context, cfg *config) error {
 			return err
 		case msg := <-msgCh:
 			if msg.msgType == websocket.MessageBinary {
-				// Relay packet from server — inject to local WireGuard
 				rm.injectPacket(msg.data)
 				continue
 			}
-			if err := handleMessage(ctx, conn, cfg.Interface, msg.data, rm, keyRotateAck); err != nil {
-				log.Printf("handle message: %v", err)
+			if err := handleMessage(ctx, conn, cfg.Interface, msg.data, rm, keyRotateAck, st); err != nil {
+				st.logError(err.Error())
+				st.render()
 			}
 		case <-statusTicker.C:
-			status, err := wgShow(cfg.Interface)
+			wgStatus, err := wgShow(cfg.Interface)
 			if err != nil {
-				log.Printf("wg show: %v", err)
+				st.logError("wg show: " + err.Error())
+				st.render()
 				continue
 			}
-			sendStatus(ctx, conn, status)
-			// Evaluate relay needs
-			rm.evaluatePeers(status)
+			sendStatus(ctx, conn, wgStatus)
+			st.setPeers(len(wgStatus.Peers))
+			rm.evaluatePeers(wgStatus)
 		case <-stunTicker.C:
 			if caps["endpoint_discovery"] {
 				listenPort := 51820
 				if s, err := wgShow(cfg.Interface); err == nil {
 					listenPort = getListenPort(s)
 				}
-				sendEndpointDiscovery(ctx, conn, listenPort)
+				sendEndpointDiscovery(ctx, conn, listenPort, st)
 			}
 		case <-keyRotateTicker.C:
 			if caps["key_rotate"] && needsRotation() {
 				if err := rotateKey(ctx, conn, cfg.Interface, keyRotateAck); err != nil {
-					log.Printf("key rotation failed: %v", err)
+					st.logError("key rotation: " + err.Error())
+					st.render()
+				} else {
+					st.logEvent("key rotated")
+					st.render()
 				}
 			}
 		}
@@ -321,13 +329,15 @@ type wsMessage struct {
 	data    []byte
 }
 
-func sendEndpointDiscovery(ctx context.Context, conn *websocket.Conn, listenPort int) {
+func sendEndpointDiscovery(ctx context.Context, conn *websocket.Conn, listenPort int, st *agentStatus) {
 	ep, err := discoverEndpoint(ctx, listenPort)
 	if err != nil {
-		log.Printf("STUN discovery failed: %v", err)
+		st.logEvent("stun discovery failed")
+		st.render()
 		return
 	}
-	log.Printf("STUN discovered endpoint: %s", ep)
+	st.setEndpoint(ep)
+	st.render()
 	msg := map[string]any{
 		"type": "endpoint.discovered",
 		"payload": map[string]any{
@@ -354,7 +364,7 @@ func sendStatus(ctx context.Context, conn *websocket.Conn, status *interfaceStat
 	conn.Write(ctx, websocket.MessageText, data)
 }
 
-func handleMessage(ctx context.Context, conn *websocket.Conn, iface string, raw []byte, rm *relayManager, keyRotateAck chan<- bool) error {
+func handleMessage(ctx context.Context, conn *websocket.Conn, iface string, raw []byte, rm *relayManager, keyRotateAck chan<- bool, st *agentStatus) error {
 	var msg struct {
 		Type    string          `json:"type"`
 		ID      string          `json:"id"`
@@ -368,14 +378,15 @@ func handleMessage(ctx context.Context, conn *websocket.Conn, iface string, raw 
 	case "heartbeat", "pong":
 		// no-op
 	case "wg.sync":
-		return handleSync(ctx, conn, iface, msg.ID, msg.Payload, rm)
+		return handleSync(ctx, conn, iface, msg.ID, msg.Payload, rm, st)
 	case "relay.bind.result":
 		var p struct {
 			Success bool `json:"success"`
 		}
 		json.Unmarshal(msg.Payload, &p)
 		if !p.Success {
-			log.Printf("relay.bind denied by server")
+			st.logEvent("relay bind denied")
+			st.render()
 		}
 	case "key.rotate.result":
 		var p struct {
@@ -388,13 +399,11 @@ func handleMessage(ctx context.Context, conn *websocket.Conn, iface string, raw 
 		}
 	case "endpoint.discovered.result":
 		// acknowledgement — no action needed
-	default:
-		log.Printf("unknown message type: %s", msg.Type)
 	}
 	return nil
 }
 
-func handleSync(ctx context.Context, conn *websocket.Conn, iface, msgID string, payload json.RawMessage, rm *relayManager) error {
+func handleSync(ctx context.Context, conn *websocket.Conn, iface, msgID string, payload json.RawMessage, rm *relayManager, st *agentStatus) error {
 	var p struct {
 		Action string `json:"action"`
 		Self   *struct {
@@ -415,14 +424,18 @@ func handleSync(ctx context.Context, conn *websocket.Conn, iface, msgID string, 
 	case "full_sync":
 		// Provision interface if we have self info
 		if p.Self != nil && p.Self.MeshIP != "" {
+			st.setMeshIP(p.Self.MeshIP)
 			if err := ensureInterface(iface, p.Self.ListenPort, p.Self.MeshIP); err != nil {
-				log.Printf("interface provisioning: %v", err)
+				st.logError("interface: " + err.Error())
 			}
 		}
 		syncErr = wgSyncFull(iface, p.Peers)
+		if syncErr == nil {
+			st.setReady(len(p.Peers))
+		}
 		// Update DNS entries for peers
 		if err := updateHosts(p.Peers); err != nil {
-			log.Printf("dns update: %v", err)
+			st.logEvent("dns update failed")
 		}
 		// Update relay manager's node map
 		if rm != nil {
@@ -443,9 +456,11 @@ func handleSync(ctx context.Context, conn *websocket.Conn, iface, msgID string, 
 			syncErr = wgRemovePeer(iface, p.Pubkey)
 		}
 	default:
-		log.Printf("unknown sync action: %s", p.Action)
 		return nil
 	}
+
+	st.logSync(p.Action, syncErr)
+	st.render()
 
 	// Report result
 	result := map[string]any{
@@ -459,9 +474,6 @@ func handleSync(ctx context.Context, conn *websocket.Conn, iface, msgID string, 
 	}
 	if syncErr != nil {
 		result["payload"].(map[string]any)["error"] = syncErr.Error()
-		log.Printf("sync %s failed: %v", p.Action, syncErr)
-	} else {
-		log.Printf("sync %s applied", p.Action)
 	}
 	data, _ := json.Marshal(result)
 	return conn.Write(ctx, websocket.MessageText, data)
