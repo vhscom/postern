@@ -195,6 +195,7 @@ func connectLoop(ctx context.Context, cfg *config, status *agentStatus) {
 }
 
 func runSession(ctx context.Context, cfg *config, st *agentStatus) error {
+	iface := cfg.Interface
 	wsURL := cfg.Server + "/ops/ws"
 	conn, _, err := websocket.Dial(ctx, wsURL, &websocket.DialOptions{
 		HTTPHeader: map[string][]string{
@@ -243,7 +244,7 @@ func runSession(ctx context.Context, cfg *config, st *agentStatus) error {
 	}
 
 	// Send initial status
-	wgStatus, err := wgShow(cfg.Interface)
+	wgStatus, err := wgShow(iface)
 	if err != nil {
 		st.logEvent("wg interface not yet provisioned")
 	} else {
@@ -257,7 +258,7 @@ func runSession(ctx context.Context, cfg *config, st *agentStatus) error {
 	}
 
 	// Relay manager
-	rm := newRelayManager(ctx, conn, cfg.Interface, getListenPort(wgStatus))
+	rm := newRelayManager(ctx, conn, iface, getListenPort(wgStatus))
 	defer rm.close()
 
 	// Main loop: read server messages, report status periodically
@@ -298,12 +299,14 @@ func runSession(ctx context.Context, cfg *config, st *agentStatus) error {
 				rm.injectPacket(msg.data)
 				continue
 			}
-			if err := handleMessage(ctx, conn, cfg.Interface, msg.data, rm, keyRotateAck, st); err != nil {
+			if newIface, err := handleMessage(ctx, conn, iface, msg.data, rm, keyRotateAck, st); err != nil {
 				st.logError(err.Error())
 				st.render()
+			} else if newIface != "" {
+				iface = newIface
 			}
 		case <-statusTicker.C:
-			wgStatus, err := wgShow(cfg.Interface)
+			wgStatus, err := wgShow(iface)
 			if err != nil {
 				st.logError("wg show: " + err.Error())
 				st.render()
@@ -315,14 +318,14 @@ func runSession(ctx context.Context, cfg *config, st *agentStatus) error {
 		case <-stunTicker.C:
 			if caps["endpoint_discovery"] {
 				listenPort := 51820
-				if s, err := wgShow(cfg.Interface); err == nil {
+				if s, err := wgShow(iface); err == nil {
 					listenPort = getListenPort(s)
 				}
 				sendEndpointDiscovery(ctx, conn, listenPort, st)
 			}
 		case <-keyRotateTicker.C:
 			if caps["key_rotate"] && needsRotation() {
-				if err := rotateKey(ctx, conn, cfg.Interface, keyRotateAck); err != nil {
+				if err := rotateKey(ctx, conn, iface, keyRotateAck); err != nil {
 					st.logError("key rotation: " + err.Error())
 					st.render()
 				} else {
@@ -375,14 +378,15 @@ func sendStatus(ctx context.Context, conn *websocket.Conn, status *interfaceStat
 	conn.Write(ctx, websocket.MessageText, data)
 }
 
-func handleMessage(ctx context.Context, conn *websocket.Conn, iface string, raw []byte, rm *relayManager, keyRotateAck chan<- bool, st *agentStatus) error {
+// handleMessage returns the updated interface name (if changed) and any error.
+func handleMessage(ctx context.Context, conn *websocket.Conn, iface string, raw []byte, rm *relayManager, keyRotateAck chan<- bool, st *agentStatus) (string, error) {
 	var msg struct {
 		Type    string          `json:"type"`
 		ID      string          `json:"id"`
 		Payload json.RawMessage `json:"payload"`
 	}
 	if err := json.Unmarshal(raw, &msg); err != nil {
-		return nil // ignore unparseable
+		return "", nil // ignore unparseable
 	}
 
 	switch msg.Type {
@@ -411,10 +415,10 @@ func handleMessage(ctx context.Context, conn *websocket.Conn, iface string, raw 
 	case "endpoint.discovered.result":
 		// acknowledgement — no action needed
 	}
-	return nil
+	return "", nil
 }
 
-func handleSync(ctx context.Context, conn *websocket.Conn, iface, msgID string, payload json.RawMessage, rm *relayManager, st *agentStatus) error {
+func handleSync(ctx context.Context, conn *websocket.Conn, iface, msgID string, payload json.RawMessage, rm *relayManager, st *agentStatus) (string, error) {
 	var p struct {
 		Action string `json:"action"`
 		Self   *struct {
@@ -427,7 +431,7 @@ func handleSync(ctx context.Context, conn *websocket.Conn, iface, msgID string, 
 		Pubkey string       `json:"public_key"`
 	}
 	if err := json.Unmarshal(payload, &p); err != nil {
-		return fmt.Errorf("parse sync payload: %w", err)
+		return "", fmt.Errorf("parse sync payload: %w", err)
 	}
 
 	var syncErr error
@@ -487,7 +491,7 @@ func handleSync(ctx context.Context, conn *websocket.Conn, iface, msgID string, 
 			syncErr = wgRemovePeer(iface, p.Pubkey)
 		}
 	default:
-		return nil
+		return "", nil
 	}
 
 	st.logSync(p.Action, syncErr)
@@ -507,5 +511,5 @@ func handleSync(ctx context.Context, conn *websocket.Conn, iface, msgID string, 
 		result["payload"].(map[string]any)["error"] = syncErr.Error()
 	}
 	data, _ := json.Marshal(result)
-	return conn.Write(ctx, websocket.MessageText, data)
+	return iface, conn.Write(ctx, websocket.MessageText, data)
 }

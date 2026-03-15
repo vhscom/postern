@@ -2,7 +2,6 @@ package agent
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -54,7 +53,7 @@ func ensureInterfaceLinux(iface, keyPath string, listenPort int, meshIP string) 
 		if err != nil {
 			return fmt.Errorf("ip link add %s: %w: %s", iface, err, out)
 		}
-		log.Printf("created interface %s", iface)
+		// logged by status block
 	}
 
 	if err := wgSetInterface(iface, keyPath, listenPort); err != nil {
@@ -74,7 +73,7 @@ func ensureInterfaceLinux(iface, keyPath string, listenPort int, meshIP string) 
 		return fmt.Errorf("ip link set %s up: %w: %s", iface, err, out)
 	}
 
-	log.Printf("interface %s configured: ip=%s port=%d", iface, meshIP, listenPort)
+	// logged by status block
 	return nil
 }
 
@@ -106,7 +105,7 @@ func ensureInterfaceDarwin(iface, keyPath string, listenPort int, meshIP string)
 			if err == nil {
 				iface = name
 				created = true
-				log.Printf("created interface %s via wireguard-go", iface)
+				// interface name logged by status block
 				break
 			}
 			outStr := string(out)
@@ -149,6 +148,6 @@ func ensureInterfaceDarwin(iface, keyPath string, listenPort int, meshIP string)
 		return "", fmt.Errorf("ifconfig %s up: %w: %s", iface, err, out)
 	}
 
-	log.Printf("interface %s configured: ip=%s port=%d", iface, meshIP, listenPort)
+	// logged by status block
 	return iface, nil
 }
