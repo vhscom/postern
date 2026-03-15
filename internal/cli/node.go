@@ -189,8 +189,8 @@ func runNodeAdd() {
 	fmt.Printf("  Config:      %s\n", cfgPath)
 	fmt.Printf("  Private key: %s\n", keyPath)
 	fmt.Println()
-	fmt.Println("Start the agent:")
-	fmt.Printf("  postern agent\n")
+	fmt.Printf("  Start the agent: %s\n", cmdStyle.Render("postern agent"))
+	fmt.Printf("  Run in background: %s\n", cmdStyle.Render("postern agent install"))
 }
 
 func runNodeUpdate() {

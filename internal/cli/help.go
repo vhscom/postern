@@ -45,7 +45,7 @@ func PrintGlobalHelp() {
 	fmt.Println()
 	printHeading("Mesh")
 	printCmd("login", "Authenticate with a postern server")
-	printCmd("node add | list | remove", "Manage mesh nodes")
+	printCmd("node add | list | update | remove", "Manage mesh nodes")
 	printCmd("invite", "Create a join token for adding nodes")
 	printCmd("join <server> <token>", "Join a mesh from an invite")
 	printCmd("agent", "Run the WireGuard mesh agent")
