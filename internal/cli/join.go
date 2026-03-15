@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"postern/internal/agent"
 	"postern/internal/wgkey"
 )
 
@@ -25,7 +26,7 @@ func RunJoin() {
 
 	serverURL := os.Args[1]
 	token := os.Args[2]
-	var label string
+	var label, iface string
 	var force bool
 
 	for i := 3; i < len(os.Args); i++ {
@@ -33,6 +34,9 @@ func RunJoin() {
 		case (os.Args[i] == "--label" || os.Args[i] == "-l") && i+1 < len(os.Args):
 			i++
 			label = os.Args[i]
+		case os.Args[i] == "--interface" && i+1 < len(os.Args):
+			i++
+			iface = os.Args[i]
 		case os.Args[i] == "--force" || os.Args[i] == "-f":
 			force = true
 		case os.Args[i] == "--no-agent":
@@ -41,6 +45,10 @@ func RunJoin() {
 			printJoinUsage()
 			return
 		}
+	}
+
+	if iface == "" {
+		iface = agent.DefaultInterface()
 	}
 
 	// Auto-detect label from hostname if not provided
@@ -83,7 +91,18 @@ func RunJoin() {
 	}
 	data, _ := json.Marshal(reqBody)
 
-	resp, err := http.Post(serverURL+"/join", "application/json", strings.NewReader(string(data)))
+	req, err := http.NewRequest("POST", serverURL+"/join", strings.NewReader(string(data)))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+
+	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}}
+	resp, err := client.Do(req)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
@@ -95,7 +114,7 @@ func RunJoin() {
 	json.Unmarshal(body, &result)
 
 	if resp.StatusCode != http.StatusCreated {
-		msg := "join failed"
+		msg := fmt.Sprintf("join failed (status %d)", resp.StatusCode)
 		if e, ok := result["error"].(string); ok {
 			msg = e
 		}
@@ -117,7 +136,7 @@ func RunJoin() {
 	agentCfg := map[string]string{
 		"server":    agentServer,
 		"token":     apiKey,
-		"interface": "wg0",
+		"interface": iface,
 	}
 	cfgData, _ := json.MarshalIndent(agentCfg, "", "  ")
 	if err := os.WriteFile(cfgPath, cfgData, 0600); err != nil {
@@ -142,6 +161,7 @@ func printJoinUsage() {
 	fmt.Println()
 	printHeading("Options")
 	printFlag("--label <name>", "Node name (default: hostname)")
+	printFlag("--interface <name>", "WireGuard interface (default: utun3/wg0)")
 	printFlag("--no-agent", "Don't start the agent after joining")
 	printFlag("--force", "Overwrite existing agent config")
 	fmt.Println()
