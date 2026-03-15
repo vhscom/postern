@@ -799,7 +799,7 @@
     /* Mesh node rendering                        */
     /* ------------------------------------------ */
 
-    function renderMeshContent(data) {
+    function renderMeshContent(data, services, isOperator) {
         const container = document.getElementById('mesh-content');
         if (!data || !data.nodes) return;
 
@@ -839,6 +839,43 @@
             }
         }
 
+        /* Services */
+        if (services && services.length > 0) {
+            html += '<div style="margin-block-start: var(--space-md)">';
+            html += '<div class="tier-info"><strong>services</strong></div>';
+            html += '<table class="node-table"><thead><tr>';
+            html += '<th>Name</th><th>Address</th><th>Access</th>';
+            if (isOperator) html += '<th></th>';
+            html += '</tr></thead><tbody>';
+            for (const s of services) {
+                const desc = s.description ? ` &mdash; ${esc(s.description)}` : '';
+                const addr = `${esc(s.host)}:${s.port}`;
+                const access = s.authorized
+                    ? '<span class="status-online">authorized</span>'
+                    : '<span class="status-offline">not authorized</span>';
+                html += `<tr>`;
+                html += `<td>${esc(s.name)}${desc}</td>`;
+                html += `<td>${addr}</td>`;
+                html += `<td>${access}</td>`;
+                if (isOperator) html += `<td><button class="node-delete-btn" data-service="${esc(s.name)}">remove</button></td>`;
+                html += `</tr>`;
+            }
+            html += '</tbody></table></div>';
+        }
+
+        /* Add service form (operator only) */
+        if (isOperator) {
+            html += '<div style="margin-block-start: var(--space-sm)">';
+            html += '<details><summary style="cursor:pointer;color:var(--color-accent);font-size:0.8rem">Add service</summary>';
+            html += '<form id="add-service-form" style="margin-block-start:var(--space-xs);gap:var(--space-xs)">';
+            html += '<label>Name <input type="text" name="name" placeholder="openclaw" required style="min-height:36px"></label>';
+            html += '<label>Host <input type="text" name="host" placeholder="10.0.0.1/32" required style="min-height:36px"></label>';
+            html += '<label>Port <input type="number" name="port" placeholder="3000" required style="min-height:36px"></label>';
+            html += '<label>Description <input type="text" name="description" placeholder="optional" style="min-height:36px"></label>';
+            html += '<button type="submit" style="min-height:36px">Add</button>';
+            html += '</form></details></div>';
+        }
+
         /* Reload button */
         html += `<button type="button" data-action="probe" style="margin-block-start: var(--space-sm)">Reload</button>`;
 
@@ -851,29 +888,52 @@
         return d.innerHTML;
     }
 
-    /* Listen for mesh data */
-    document.addEventListener('api-response', (e) => {
+    /* Listen for mesh data — fetch services and user info after nodes load */
+    document.addEventListener('api-response', async (e) => {
         if (e.detail.path === '/account/nodes' && e.detail.ok) {
-            renderMeshContent(e.detail.body);
+            let services = [];
+            let isOperator = false;
+            try {
+                const [svcRes, meRes] = await Promise.all([
+                    fetch('/account/services', { headers: { 'Accept': 'application/json' } }),
+                    fetch('/account/me', { headers: { 'Accept': 'application/json' } })
+                ]);
+                if (svcRes.ok) {
+                    const data = await svcRes.json();
+                    services = data.services || [];
+                }
+                if (meRes.ok) {
+                    const me = await meRes.json();
+                    isOperator = me.userId === 1;
+                }
+            } catch { /* ignore */ }
+            renderMeshContent(e.detail.body, services, isOperator);
         }
     });
 
-    /* Node deletion */
+    /* Node and service deletion */
     document.addEventListener('click', async (e) => {
         const btn = e.target.closest('.node-delete-btn');
         if (!btn) return;
+
         const label = btn.dataset.label;
-        if (!confirm(`Remove node "${label}" from the mesh?`)) return;
+        const service = btn.dataset.service;
+        const name = label || service;
+        const type = label ? 'node' : 'service';
+        const url = label
+            ? `/account/nodes/${encodeURIComponent(label)}`
+            : `/account/services/${encodeURIComponent(service)}`;
+
+        if (!confirm(`Remove ${type} "${name}"?`)) return;
 
         btn.textContent = '...';
         btn.disabled = true;
         try {
-            const res = await fetch(`/account/nodes/${encodeURIComponent(label)}`, {
+            const res = await fetch(url, {
                 method: 'DELETE',
                 headers: { 'Accept': 'application/json' }
             });
             if (res.ok) {
-                /* Reload mesh */
                 const meshStep = document.getElementById('mesh-step');
                 if (meshStep) {
                     const console = meshStep.shadowRoot?.querySelector('api-console');
@@ -881,7 +941,7 @@
                 }
             } else {
                 const data = await res.json();
-                alert(data.error || 'Failed to remove node');
+                alert(data.error || `Failed to remove ${type}`);
                 btn.textContent = 'remove';
                 btn.disabled = false;
             }
@@ -889,6 +949,39 @@
             alert('Network error');
             btn.textContent = 'remove';
             btn.disabled = false;
+        }
+    });
+
+    /* Add service form */
+    document.addEventListener('submit', async (e) => {
+        if (e.target.id !== 'add-service-form') return;
+        e.preventDefault();
+        e.stopPropagation();
+        const form = e.target;
+        const body = {
+            name: form.name.value,
+            host: form.host.value,
+            port: parseInt(form.port.value, 10),
+            description: form.description.value
+        };
+        try {
+            const res = await fetch('/account/services', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            if (res.ok) {
+                const meshStep = document.getElementById('mesh-step');
+                if (meshStep) {
+                    const console = meshStep.shadowRoot?.querySelector('api-console');
+                    if (console) console.execute();
+                }
+            } else {
+                const data = await res.json();
+                alert(data.error || 'Failed to add service');
+            }
+        } catch {
+            alert('Network error');
         }
     });
 
