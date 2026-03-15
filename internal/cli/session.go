@@ -51,6 +51,33 @@ func clearSession() error {
 	return os.Remove(sessionPath())
 }
 
+// checkAuthExpired exits with a helpful message if the response is 401.
+func checkAuthExpired(statusCode int) {
+	if statusCode == http.StatusUnauthorized {
+		fmt.Fprintln(os.Stderr, "Error: session expired — run 'postern login' to re-authenticate")
+		os.Exit(1)
+	}
+}
+
+// guardExistingConfig exits if agent config already exists and force is false.
+// Returns the config dir, config path, and key path for use by the caller.
+func guardExistingConfig(force bool, command string) (cfgDir, cfgPath, keyPath string) {
+	cfgDir = configDir()
+	cfgPath = filepath.Join(cfgDir, "config.json")
+	keyPath = filepath.Join(cfgDir, "private.key")
+	if !force {
+		if _, err := os.Stat(cfgPath); err == nil {
+			fmt.Fprintf(os.Stderr, "Error: agent config already exists at %s\n", cfgPath)
+			fmt.Fprintln(os.Stderr, "This machine is already configured as a node.")
+			fmt.Fprintln(os.Stderr, "Re-running would overwrite the existing private key and credentials.")
+			fmt.Fprintln(os.Stderr)
+			fmt.Fprintf(os.Stderr, "To replace the existing config: %s --force ...\n", command)
+			os.Exit(1)
+		}
+	}
+	return
+}
+
 // authedRequest creates an HTTP request with stored session cookies.
 func authedRequest(method, path string, body *strings.Reader) (*http.Request, *storedSession, error) {
 	sess, err := loadSession()

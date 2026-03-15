@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"postern/internal/agent"
@@ -61,20 +60,7 @@ func RunJoin() {
 		os.Exit(1)
 	}
 
-	// Guard against overwriting existing agent config
-	cfgDir := configDir()
-	cfgPath := filepath.Join(cfgDir, "config.json")
-	keyPath := filepath.Join(cfgDir, "private.key")
-	if !force {
-		if _, err := os.Stat(cfgPath); err == nil {
-			fmt.Fprintf(os.Stderr, "Error: agent config already exists at %s\n", cfgPath)
-			fmt.Fprintln(os.Stderr, "This machine is already configured as a node. Joining again")
-			fmt.Fprintln(os.Stderr, "would overwrite the existing private key and credentials.")
-			fmt.Fprintln(os.Stderr)
-			fmt.Fprintln(os.Stderr, "To replace the existing config: postern join --force ...")
-			os.Exit(1)
-		}
-	}
+	cfgDir, cfgPath, keyPath := guardExistingConfig(force, "postern join")
 
 	// Generate WireGuard keypair
 	privKey, pubKey, err := wgkey.GenerateKeypair()

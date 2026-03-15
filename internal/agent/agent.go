@@ -461,7 +461,7 @@ func handleSync(ctx context.Context, conn *websocket.Conn, iface, msgID string, 
 				os.Exit(1)
 			} else if actualIface != iface {
 				iface = actualIface
-				st.iface = actualIface
+				st.setIface(actualIface)
 			}
 		}
 		syncErr = wgSyncFull(iface, p.Peers)

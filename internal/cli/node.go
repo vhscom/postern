@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -103,20 +102,7 @@ func runNodeAdd() {
 		iface = agent.DefaultInterface()
 	}
 
-	// Guard against overwriting existing agent config
-	cfgDir := configDir()
-	cfgPath := filepath.Join(cfgDir, "config.json")
-	keyPath := filepath.Join(cfgDir, "private.key")
-	if !force {
-		if _, err := os.Stat(cfgPath); err == nil {
-			fmt.Fprintf(os.Stderr, "Error: agent config already exists at %s\n", cfgPath)
-			fmt.Fprintln(os.Stderr, "This machine is already configured as a node. Adding another")
-			fmt.Fprintln(os.Stderr, "would overwrite the existing private key and credentials.")
-			fmt.Fprintln(os.Stderr)
-			fmt.Fprintln(os.Stderr, "To replace the existing config: postern node add --force ...")
-			os.Exit(1)
-		}
-	}
+	cfgDir, cfgPath, keyPath := guardExistingConfig(force, "postern node add")
 
 	// Generate WireGuard keypair
 	privKey, pubKey, err := wgkey.GenerateKeypair()
@@ -161,10 +147,7 @@ func runNodeAdd() {
 	json.Unmarshal(respBody, &result)
 
 	if resp.StatusCode != http.StatusCreated {
-		if resp.StatusCode == http.StatusUnauthorized {
-			fmt.Fprintln(os.Stderr, "Error: session expired — run 'postern login' to re-authenticate")
-			os.Exit(1)
-		}
+		checkAuthExpired(resp.StatusCode)
 		msg := "failed to add node"
 		if e, ok := result["error"].(string); ok {
 			msg = e
@@ -268,10 +251,7 @@ func runNodeUpdate() {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		if resp.StatusCode == http.StatusUnauthorized {
-			fmt.Fprintln(os.Stderr, "Error: session expired — run 'postern login' to re-authenticate")
-			os.Exit(1)
-		}
+		checkAuthExpired(resp.StatusCode)
 		body, _ := io.ReadAll(resp.Body)
 		var result map[string]any
 		json.Unmarshal(body, &result)
@@ -304,10 +284,7 @@ func runNodeList() {
 	body, _ := io.ReadAll(resp.Body)
 
 	if resp.StatusCode != http.StatusOK {
-		if resp.StatusCode == http.StatusUnauthorized {
-			fmt.Fprintln(os.Stderr, "Error: session expired — run 'postern login' to re-authenticate")
-			os.Exit(1)
-		}
+		checkAuthExpired(resp.StatusCode)
 		var result map[string]any
 		json.Unmarshal(body, &result)
 		msg := "request failed"
@@ -377,10 +354,7 @@ func runNodeRemove() {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		if resp.StatusCode == http.StatusUnauthorized {
-			fmt.Fprintln(os.Stderr, "Error: session expired — run 'postern login' to re-authenticate")
-			os.Exit(1)
-		}
+		checkAuthExpired(resp.StatusCode)
 		body, _ := io.ReadAll(resp.Body)
 		var result map[string]any
 		json.Unmarshal(body, &result)

@@ -80,6 +80,12 @@ func (s *agentStatus) setMeshIP(ip string) {
 	s.meshIP = ip
 }
 
+func (s *agentStatus) setIface(iface string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.iface = iface
+}
+
 func (s *agentStatus) setEndpoint(ep string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

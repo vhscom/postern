@@ -36,10 +36,7 @@ func RunInvite() {
 	json.Unmarshal(body, &result)
 
 	if resp.StatusCode != http.StatusCreated {
-		if resp.StatusCode == http.StatusUnauthorized {
-			fmt.Fprintln(os.Stderr, "Error: session expired — run 'postern login' to re-authenticate")
-			os.Exit(1)
-		}
+		checkAuthExpired(resp.StatusCode)
 		msg := "invite failed"
 		if e, ok := result["error"].(string); ok {
 			msg = e
