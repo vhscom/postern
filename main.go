@@ -152,6 +152,13 @@ func runServe() {
 	mux.Handle("DELETE /account/nodes/{label}", nodeRL(requireAuthMiddleware(http.HandlerFunc(handleNodeDelete))))
 	mux.Handle("POST /account/nodes/invite", nodeRL(requireAuthMiddleware(http.HandlerFunc(handleInviteCreate))))
 
+	// --- Services (authenticated, operator manages access) ---
+	mux.Handle("GET /account/services", requireAuthMiddleware(http.HandlerFunc(handleServiceList)))
+	mux.Handle("POST /account/services", requireAuthMiddleware(http.HandlerFunc(handleServiceCreate)))
+	mux.Handle("DELETE /account/services/{name}", requireAuthMiddleware(http.HandlerFunc(handleServiceDelete)))
+	mux.Handle("POST /account/services/{name}/grant", requireAuthMiddleware(http.HandlerFunc(handleServiceGrant)))
+	mux.Handle("DELETE /account/services/{name}/grant/{user_id}", requireAuthMiddleware(http.HandlerFunc(handleServiceRevoke)))
+
 	// --- Join (public, rate-limited) ---
 	joinRL := rateLimit(rateConfig{Window: 5 * time.Minute, Max: 10, Prefix: "rl:join"})
 	mux.Handle("POST /join", joinRL(http.HandlerFunc(handleJoinRedeem)))
@@ -178,6 +185,11 @@ func runServe() {
 	ops.Handle("GET /ops/events", requireAgentKey(requireOpsAgent(http.HandlerFunc(handleOpsEvents))))
 	ops.Handle("GET /ops/events/stats", requireAgentKey(requireOpsAgent(http.HandlerFunc(handleOpsEventStats))))
 	ops.Handle("GET /ops/subscriptions/{user_id}/history", requireAgentKey(requireOpsAgent(http.HandlerFunc(handleOpsSubscriptionHistory))))
+	ops.Handle("GET /ops/services", requireAgentKey(requireOpsAgent(http.HandlerFunc(handleOpsServiceList))))
+	ops.Handle("POST /ops/services", requireProvisioningSecret(http.HandlerFunc(handleOpsServiceCreate)))
+	ops.Handle("DELETE /ops/services/{name}", requireProvisioningSecret(http.HandlerFunc(handleOpsServiceDelete)))
+	ops.Handle("POST /ops/services/{name}/grant", requireProvisioningSecret(http.HandlerFunc(handleOpsServiceGrant)))
+	ops.Handle("DELETE /ops/services/{name}/grant/{user_id}", requireProvisioningSecret(http.HandlerFunc(handleOpsServiceRevoke)))
 	ops.Handle("GET /ops/nodes", requireAgentKey(requireOpsAgent(http.HandlerFunc(handleOpsNodeList))))
 
 	// WebSocket multiplexer: Bearer → agent WS, Cookie → bridge proxy

@@ -183,6 +183,7 @@ func handleAccountDelete(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback()
 
 	for _, q := range []string{
+		"DELETE FROM service_grant WHERE user_id = ?",
 		"DELETE FROM invite_token WHERE user_id = ?",
 		"DELETE FROM subscription_history WHERE user_id = ?",
 		"DELETE FROM user_subscription WHERE user_id = ?",

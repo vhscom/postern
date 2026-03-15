@@ -385,6 +385,125 @@ func numericID(v any) (int, bool) {
 	return 0, false
 }
 
+// --- Ops service management (provisioning secret) ---
+
+// GET /ops/services
+func handleOpsServiceList(w http.ResponseWriter, r *http.Request) {
+	rows, err := store.Query("SELECT name, description, host, port FROM mesh_service ORDER BY name")
+	if err != nil {
+		jsonError(w, 500, "INTERNAL_ERROR", "Failed to list services")
+		return
+	}
+	defer rows.Close()
+
+	type service struct {
+		Name        string  `json:"name"`
+		Description *string `json:"description"`
+		Host        string  `json:"host"`
+		Port        int     `json:"port"`
+	}
+	services := make([]service, 0)
+	for rows.Next() {
+		var s service
+		rows.Scan(&s.Name, &s.Description, &s.Host, &s.Port)
+		services = append(services, s)
+	}
+	jsonOK(w, map[string]any{"services": services})
+}
+
+// POST /ops/services
+func handleOpsServiceCreate(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+		Host        string `json:"host"`
+		Port        int    `json:"port"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		jsonError(w, 400, "INVALID_BODY", "Invalid JSON")
+		return
+	}
+	if body.Name == "" || body.Host == "" || body.Port == 0 {
+		jsonError(w, 400, "VALIDATION_ERROR", "Name, host, and port are required")
+		return
+	}
+
+	var desc *string
+	if body.Description != "" {
+		desc = &body.Description
+	}
+
+	_, err := store.Exec(
+		"INSERT INTO mesh_service (name, description, host, port) VALUES (?,?,?,?)",
+		body.Name, desc, body.Host, body.Port,
+	)
+	if err != nil {
+		if isUniqueViolation(err) {
+			jsonError(w, 409, "SERVICE_EXISTS", "Service name already exists")
+			return
+		}
+		jsonError(w, 500, "INTERNAL_ERROR", "Failed to create service")
+		return
+	}
+	jsonCreated(w, map[string]any{"name": body.Name, "host": body.Host, "port": body.Port})
+}
+
+// DELETE /ops/services/{name}
+func handleOpsServiceDelete(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	result, err := store.Exec("DELETE FROM mesh_service WHERE name = ?", name)
+	if err != nil {
+		jsonError(w, 500, "INTERNAL_ERROR", "Failed to delete service")
+		return
+	}
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		jsonError(w, 404, "NOT_FOUND", "Service not found")
+		return
+	}
+	jsonOK(w, map[string]any{"ok": true})
+}
+
+// POST /ops/services/{name}/grant
+func handleOpsServiceGrant(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	var body struct {
+		UserID int `json:"user_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.UserID == 0 {
+		jsonError(w, 400, "VALIDATION_ERROR", "user_id required")
+		return
+	}
+
+	var serviceID int
+	if err := store.QueryRow("SELECT id FROM mesh_service WHERE name = ?", name).Scan(&serviceID); err != nil {
+		jsonError(w, 404, "NOT_FOUND", "Service not found")
+		return
+	}
+
+	store.Exec("INSERT OR IGNORE INTO service_grant (service_id, user_id) VALUES (?,?)", serviceID, body.UserID)
+	go notifyNodeSync(body.UserID)
+	jsonOK(w, map[string]any{"ok": true, "service": name, "user_id": body.UserID})
+}
+
+// DELETE /ops/services/{name}/grant/{user_id}
+func handleOpsServiceRevoke(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	userID := r.PathValue("user_id")
+
+	var serviceID int
+	if err := store.QueryRow("SELECT id FROM mesh_service WHERE name = ?", name).Scan(&serviceID); err != nil {
+		jsonError(w, 404, "NOT_FOUND", "Service not found")
+		return
+	}
+
+	store.Exec("DELETE FROM service_grant WHERE service_id = ? AND user_id = ?", serviceID, userID)
+	if uid, ok := numericID(userID); ok {
+		go notifyNodeSync(uid)
+	}
+	jsonOK(w, map[string]any{"ok": true})
+}
+
 // parseSince returns a SQL-safe datetime string for the "since" parameter.
 // Defaults to 24 hours ago if empty or unparseable.
 func parseSince(s string) string {
