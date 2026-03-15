@@ -123,6 +123,15 @@
             background: rgb(0 229 204 / 0.08);
         }
 
+        button:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        button:disabled:is(:hover, :focus) {
+            background: transparent;
+        }
+
         button:focus-visible {
             outline: none;
             box-shadow: 0 0 0 2px var(--color-accent-glow);
@@ -907,7 +916,7 @@
                     cmdEl.textContent = data.join_command;
                     resultEl.hidden = false;
                     btn.textContent = 'Create Another';
-                    btn.disabled = false;
+                    btn.disabled = true;
 
                     /* Also fire api-response for the console */
                     const step = document.getElementById('invite-step');
@@ -942,6 +951,10 @@
                 if (msg) {
                     msg.style.display = 'inline';
                     setTimeout(() => { msg.style.display = 'none'; }, 2000);
+                }
+                const invBtn = document.getElementById('create-invite-btn');
+                if (invBtn) {
+                    invBtn.disabled = false;
                 }
             } catch { /* clipboard not available */ }
         }
@@ -1162,7 +1175,7 @@
         }
 
         _updateAuthState(detail) {
-            const { ok, path } = detail;
+            const { ok, status, path } = detail;
             let newState = this._authState;
 
             if (path === '/auth/register' && ok) {
@@ -1173,6 +1186,10 @@
                 newState = 'unauthenticated';
             } else if (path === '/account/password' && ok) {
                 newState = 'unauthenticated';
+            } else if (path.startsWith('/account') && ok) {
+                newState = 'authenticated';
+            } else if (status === 401) {
+                newState = 'unauthenticated';
             }
 
             if (newState !== this._authState) {
@@ -1180,7 +1197,9 @@
                 this._statusEl.textContent = `-- ${newState}`;
                 this._statusEl.className = `auth-status ${newState}`;
 
-                if (newState === 'authenticated') {
+                if (newState === 'registered') {
+                    this.switchTab(1); // go to Login
+                } else if (newState === 'authenticated' && path === '/auth/login') {
                     if (this._returnTo) {
                         location.href = this._returnTo;
                     } else {
