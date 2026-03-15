@@ -134,7 +134,8 @@ postern
 ├── ops.go               Ops REST handlers
 ├── events.go            Security event logging, adaptive PoW
 ├── middleware.go         Auth, rate limiting, security headers
-├── respond.go           Content negotiation, validation, helpers
+├── respond.go           Content negotiation, cookies, helpers
+├── validate.go          Input validation (email, password, label, pubkey, CIDR)
 ├── db.go                SQLite init, schema
 ├── bridge.go            Control proxy WebSocket bridge
 ├── proxy.go             Control proxy HTTP reverse proxy

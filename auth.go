@@ -214,16 +214,6 @@ func handleMe(w http.ResponseWriter, r *http.Request) {
 	jsonOK(w, map[string]any{"userId": claims.UID})
 }
 
-// GET /health
-func handleHealth(w http.ResponseWriter, r *http.Request) {
-	status := "ok"
-	if err := store.Ping(); err != nil {
-		status = "degraded"
-		w.WriteHeader(http.StatusServiceUnavailable)
-	}
-	jsonOK(w, map[string]any{"status": status, "timestamp": nowUnix()})
-}
-
 func jsonChallenge(w http.ResponseWriter, code, msg string, ch *Challenge) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusForbidden)
