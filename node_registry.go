@@ -80,6 +80,35 @@ func notifyNodeSync(userID int) {
 		allNodes = append(allNodes, n)
 	}
 
+	// Include operator nodes that host services the user has been granted access to.
+	// The operator (uid=1) always has access to their own nodes via the query above.
+	if userID != 1 {
+		svcRows, err := store.Query(`
+			SELECT DISTINCT un.id, un.label, un.wg_pubkey, un.wg_endpoint,
+				un.allowed_ips, un.wg_listen_port, un.persistent_keepalive
+			FROM user_node un
+			JOIN mesh_service ms ON un.allowed_ips = ms.host
+			JOIN service_grant sg ON sg.service_id = ms.id AND sg.user_id = ?
+			WHERE un.user_id = 1`,
+			userID,
+		)
+		if err == nil {
+			defer svcRows.Close()
+			seen := make(map[int]bool)
+			for _, n := range allNodes {
+				seen[n.ID] = true
+			}
+			for svcRows.Next() {
+				var n meshNode
+				svcRows.Scan(&n.ID, &n.Label, &n.Pubkey, &n.Endpoint, &n.AllowedIPs, &n.ListenPort, &n.Keepalive)
+				if !seen[n.ID] {
+					allNodes = append(allNodes, n)
+					seen[n.ID] = true
+				}
+			}
+		}
+	}
+
 	// Each connected node gets its own info (self) plus all OTHER nodes as peers
 	type syncPeer struct {
 		NodeID     int    `json:"node_id"`

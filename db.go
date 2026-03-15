@@ -130,6 +130,22 @@ func migrate() {
 			used_by_node_id INTEGER REFERENCES user_node(id)
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_invite_token_hash ON invite_token(token_hash)`,
+		`CREATE TABLE IF NOT EXISTS mesh_service (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT UNIQUE NOT NULL,
+			description TEXT,
+			host TEXT NOT NULL,
+			port INTEGER NOT NULL,
+			created_at TEXT DEFAULT (datetime('now'))
+		)`,
+		`CREATE TABLE IF NOT EXISTS service_grant (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			service_id INTEGER NOT NULL REFERENCES mesh_service(id) ON DELETE CASCADE,
+			user_id INTEGER NOT NULL REFERENCES account(id) ON DELETE CASCADE,
+			created_at TEXT DEFAULT (datetime('now')),
+			UNIQUE(service_id, user_id)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_service_grant_user ON service_grant(user_id)`,
 	}
 	for _, s := range stmts {
 		if _, err := store.Exec(s); err != nil {
